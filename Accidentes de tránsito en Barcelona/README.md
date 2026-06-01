@@ -108,7 +108,7 @@ pip install mysql-connector-python pandas
 
 ```bash
 git init
-git remote add origin https://github.com/Programming-cases/Data-Science-and-Analytics.git
+git remote add origin https://github.com/evolve-space/Proyecto-Master-DataScience-Evolve-JuanPabloDelzo.git
 git config core.sparse Checkout true
 git sparse-checkout set 'Accidentes de tránsito en Barcelona'
 git pull origin master

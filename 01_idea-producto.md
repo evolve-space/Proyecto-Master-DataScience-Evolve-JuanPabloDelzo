@@ -74,7 +74,7 @@ Este producto resuelve ambas situaciones de forma rápida y clara.
 
 ## Tecnología base
 
-Los datos provienen del [Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat), que ofrece información actualizada sobre el estado de todas las estaciones de la red.
+Los datos provienen del [Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) que ofrece información actualizada sobre el estado de todas las estaciones de la red.
 
 ---
 

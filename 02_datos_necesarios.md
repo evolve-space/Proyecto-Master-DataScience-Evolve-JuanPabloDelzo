@@ -1,6 +1,10 @@
 # 📦 Datos Necesarios para el Proyecto
 
-Para predecir la disponibilidad de bicicletas y anclajes en las estaciones Bicing, se utilizan métodos de **predicción de series temporales**. Esto requiere dos tipos de datos bien diferenciados.
+Para predecir la disponibilidad de bicicletas y anclajes en las estaciones Bicing, se utilizarán métodos de **predicción de series temporales**. Esto requiere dos tipos de datos bien diferenciados. 
+
+>La información y los estados de las estaciones provienen de la página del Ayuntamiento de Barcelona:
+- [Estado de las estaciones](https://opendata-ajuntament.barcelona.cat/data/es/dataset/estat-estacions-bicing)
+- [Información de las estaciones](https://opendata-ajuntament.barcelona.cat/data/es/dataset/informacio-estacions-bicing)
 
 ---
 

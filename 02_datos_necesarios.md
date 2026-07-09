@@ -1,11 +1,9 @@
 # 📦 Datos Necesarios para el Proyecto
 
-1. La información y los estados de las estaciones `Bicing` provienen de la página del Ayuntamiento de Barcelona:
-    - [Información de las estaciones](https://opendata-ajuntament.barcelona.cat/data/es/dataset/informacio-estacions-bicing)
-    - [Estado de las estaciones](https://opendata-ajuntament.barcelona.cat/data/es/dataset/estat-estacions-bicing)
-    
+Para predecir la disponibilidad de bicicletas y anclajes en las estaciones, se requerirán dos tipos de datos bien diferenciados. Dichos datos están disponibles en la página web del ayuntamiento de Barcelona:  
 
-2. Con el objetivo de predecir la disponibilidad de bicicletas y anclajes en las estaciones, se utilizarán métodos de **predicción de series temporales**. Esto requerirá dos tipos de datos bien diferenciados. 
+- [Información de las estaciones Bicing](https://opendata-ajuntament.barcelona.cat/data/es/dataset/informacio-estacions-bicing)
+- [Estado de las estaciones Bicing](https://opendata-ajuntament.barcelona.cat/data/es/dataset/estat-estacions-bicing)
 
 ---
 

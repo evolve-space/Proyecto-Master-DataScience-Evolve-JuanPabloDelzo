@@ -65,8 +65,8 @@ Los datos provienen del [Open Data Ajuntament de Barcelona](https://opendata-aju
 Archivos mensuales con el estado en tiempo real de cada estación, desde julio de **2020** hasta octubre de **2025**.
 
 ```
-Datos/
-└── Estado estaciones/
+docs/
+└── entregas/
     ├── 2020/  · · · · 6 meses
     ├── 2021/  · · · · 12 meses
     ├── 2022/  · · · · 12 meses
@@ -83,10 +83,10 @@ Cada registro contiene: `bicis disponibles`, `anclajes libres`, `tipo de bici` (
 
 ### 📍 Datos estáticos — Información de las estaciones
 
-Un único archivo `Informacion_estaciones.csv` con las características fijas de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
+Un único archivo `2026_06_Juny_BicingNou_INFORMACIO.7.csv` con las características fijas de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
 
 ```
-Informacion_estaciones.csv
+docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv
  ├── station_id   ← clave de unión con el historial
  ├── lat / lon    ← coordenadas para calcular distancias
  ├── capacity     ← total de anclajes
@@ -98,7 +98,7 @@ Informacion_estaciones.csv
 ### 🔗 Relación entre datasets
 
 ```
-Informacion_estaciones.csv     +     Estado estaciones (mensual)
+docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv     +     Estado estaciones (mensual)
       (dónde está y cómo es)              (cómo está en cada momento)
              │                                       │
              └─────────── station_id ────────────────┘
@@ -115,9 +115,9 @@ Informacion_estaciones.csv     +     Estado estaciones (mensual)
 ├── 📄 01_idea-producto.md         ← Descripción del producto
 ├── 📄 02_datos-necesarios.md      ← Descripción de los datos
 │
-└── 📂 Datos/                      ← (ignorado en Git)
-    ├── 📂 Estado estaciones/
-    └── 📄 Informacion_estaciones.csv
+└── 📂 docs/                      ← (ignorado en Git)
+    ├── 📂 entregas/               ← Datos entregados
+    └── 📄 2026_06_Juny_BicingNou_INFORMACIO.7.csv
 ```
 
 ---

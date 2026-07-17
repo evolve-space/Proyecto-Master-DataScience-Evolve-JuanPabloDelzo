@@ -10,9 +10,8 @@ def create_database(cursor):
     cursor.execute(f"DROP DATABASE IF EXISTS `{DATABASE_NAME}`")
     cursor.execute(
         f"CREATE DATABASE `{DATABASE_NAME}` "
-        #f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        f"CHARACTER SET latin1 COLLATE latin1_spanish_ci"
-    )
+        f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
 
 
 def create_tables(connection):

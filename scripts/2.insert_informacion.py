@@ -1,12 +1,14 @@
+import csv
 import sys
 from pathlib import Path
+
+import polars as pl
 import mysql.connector
-import pandas as pd
-import numpy as np
 from mysql.connector import Error
 
 INFORMACION_DIR = Path(__file__).resolve().parent.parent / "docs" / "entregas" / "informacion"
-files = sorted(INFORMACION_DIR.iterdir())
+files = sorted(INFORMACION_DIR.glob("*.csv"))
+
 ATRIBUTOS = [
     "station_id",
     "physical_configuration",
@@ -15,8 +17,20 @@ ATRIBUTOS = [
     "address",
     "post_code",
     "capacity",
-    "last_updated"
+    "last_updated",
 ]
+
+COLUMNAS_FINALES = [
+    "station_id",
+    "physical_configuration",
+    "latitud",
+    "longitud",
+    "address",
+    "post_code",
+    "capacity",
+    "last_update",
+]
+
 INSERT_INFORMACION = """
     INSERT INTO informacion (
         station_id,
@@ -37,28 +51,92 @@ INSERT_INFORMACION = """
         capacity = VALUES(capacity),
         last_update = VALUES(last_update)
 """
-def formato_cp(cp):
-    """
-    Formatea el código postal para que tenga 5 dígitos.
-    Si no es un string numérico, devuelve np.nan.
-    """
-    return np.nan if not isinstance(cp, str) else cp.zfill(5)
+
+
+def _header_columns(file):
+    with open(file, "r", encoding="utf-8-sig", errors="replace") as f:
+        line = f.readline()
+    return [col.strip().strip('"') for col in line.split(",") if col.strip()]
+
+
+def _read_informacion_csv(file):
+    present_cols = [col for col in _header_columns(file) if col in ATRIBUTOS]
+    for encoding in ("utf8", "windows-1252", "utf8-lossy"):
+        try:
+            return pl.read_csv(
+                file,
+                columns=present_cols,
+                schema_overrides={"post_code": pl.Utf8},
+                encoding=encoding,
+                try_parse_dates=False,
+                null_values=["NA", "N/A", "NULL", "null", "None", "NaN", "nan"],
+            )
+        except (UnicodeDecodeError, pl.exceptions.ComputeError):
+            continue
+    raise RuntimeError(f"No se pudo leer {file} con utf8, windows-1252 ni utf8-lossy")
+
+
+def _formato_cp(cp):
+    if cp is None:
+        return None
+    cp = cp.strip()
+    if not cp.isdigit() or len(cp) > 5:
+        return None
+    return cp.zfill(5)
+
+
+def _normalizar_df(df):
+    df = df.filter(pl.col("station_id").is_not_null())
+    df = df.with_columns(pl.col("station_id").cast(pl.Int64, strict=False))
+
+    df = df.rename({"lat": "latitud", "lon": "longitud"}, strict=False)
+
+    if "last_updated" in df.columns:
+        df = (
+            df.with_columns(
+                pl.from_epoch(
+                    pl.col("last_updated").cast(pl.Int64, strict=False),
+                    time_unit="s",
+                ).alias("last_update")
+            )
+            .drop("last_updated")
+        )
+
+    expected = {
+        "station_id": pl.Int64,
+        "physical_configuration": pl.Utf8,
+        "latitud": pl.Float64,
+        "longitud": pl.Float64,
+        "address": pl.Utf8,
+        "post_code": pl.Utf8,
+        "capacity": pl.Int64,
+        "last_update": pl.Datetime("us"),
+    }
+
+    for col, dtype in expected.items():
+        if col not in df.columns:
+            df = df.with_columns(pl.lit(None).cast(dtype).alias(col))
+        else:
+            df = df.with_columns(pl.col(col).cast(dtype, strict=False))
+
+    df = df.with_columns(
+        pl.col("post_code").map_elements(_formato_cp, return_dtype=pl.Utf8)
+    )
+
+    df = df.unique(subset=["station_id"], keep="last", maintain_order=True)
+    return df.select(list(expected.keys()))
+
 
 def load_informacion():
-    dimension = pd.concat([pd.read_csv(file, usecols=ATRIBUTOS, dtype={"post_code": str}, encoding="latin-1", low_memory=False) for file in files], 
-                          axis=0, ignore_index=True)
-    dimension = dimension.dropna(subset=["station_id"])
-    dimension = dimension.drop_duplicates(subset=["station_id"], keep="last")
-    dimension = dimension.rename(columns={"lat": "latitud", 
-                                          "lon": "longitud",
-                                          "last_updated": "last_update"})
-    dimension = dimension.assign(
-        station_id=dimension['station_id'].astype(int),
-        capacity=dimension['capacity'].astype(int),
-        last_update=pd.to_datetime(dimension['last_update'], unit='s'),
-        post_code=dimension["post_code"].apply(formato_cp)
-    )
-    
+    partes = []
+    for file in files:
+        df = _read_informacion_csv(file)
+        df = _normalizar_df(df)
+        partes.append(df)
+        print(f"Procesado {file.name}: {df.height} estaciones")
+
+    dimension = pl.concat(partes, how="vertical")
+    dimension = dimension.unique(subset=["station_id"], keep="last", maintain_order=True)
     return dimension
 
 
@@ -73,16 +151,13 @@ def insert_informacion(dataframe):
         )
         cursor = connection.cursor()
         batch_size = 10_000
-        for start in range(0, len(dataframe), batch_size):
-            batch = dataframe.iloc[start:start + batch_size]
-            rows = [
-                tuple(None if pd.isna(value) else value for value in row)
-                for row in batch.itertuples(index=False, name=None)
-            ]
+        for start in range(0, dataframe.height, batch_size):
+            batch = dataframe.slice(start, batch_size)
+            rows = [tuple(row) for row in batch.iter_rows(named=False)]
             cursor.executemany(INSERT_INFORMACION, rows)
             connection.commit()
         cursor.close()
-        print(f"{len(dataframe)} estaciones insertadas en informacion.")
+        print(f"{dataframe.height} estaciones insertadas en informacion.")
     except Error as error:
         print(f"No se pudieron insertar las estaciones: {error}", file=sys.stderr)
         sys.exit(1)

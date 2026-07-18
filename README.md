@@ -43,13 +43,13 @@ Este proyecto resuelve exactamente eso:
 ┌──────────────────────────────────────────┐
 │         Estaciones cercanas              │
 │                                          │
-│  📍 Passeig de Gràcia  · 120m           │
+│  📍 Passeig de Gràcia,178       · 120m   │
 │     🚲 Bicis: 5   🔒 Anclajes: 3        │
 │                                          │
-│  📍 Plaça Catalunya    · 340m           │
+│  📍 Plaça Catalunya             · 340m   │
 │     🚲 Bicis: 2   🔒 Anclajes: 8        │
 │                                          │
-│  📍 Eixample           · 480m           │
+│  📍 Travesera de les Corts,375  · 480m   │
 │     🚲 Bicis: 0   🔒 Anclajes: 12       │
 └──────────────────────────────────────────┘
 ```

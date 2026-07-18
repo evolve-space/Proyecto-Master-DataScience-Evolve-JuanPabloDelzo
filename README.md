@@ -58,51 +58,77 @@ Este proyecto resuelve exactamente eso:
 
 ## 📦 Datos del proyecto
 
-Los datos provienen del [Open Data Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) y se dividen en dos tipos:
+Los datos provienen del [Open Data Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) y del API de **Open-Meteo**, y se dividen en tres tipos:
 
 ### 🕐 Historial temporal — Estado de las estaciones
 
-Archivos mensuales con el estado en tiempo real de cada estación, desde julio de **2020** hasta octubre de **2025**.
+Archivos mensuales `.csv` con el estado en tiempo real de cada estación, ubicados en `docs/entregas/estado/`, desde julio de **2020** hasta septiembre de **2025**.
 
 ```
-docs/
-└── entregas/
-    ├── 2020/  · · · · 6 meses
-    ├── 2021/  · · · · 12 meses
-    ├── 2022/  · · · · 12 meses
-    ├── 2023/  · · · · 12 meses
-    ├── 2024/  · · · · 12 meses
-    └── 2025/  · · · · 10 meses
+docs/data/
+└── estado/
+    ├── 2020_07_Juliol_BicingNou_ESTACIONS.csv
+    ├── 2020_08_Agost_BicingNou_ESTACIONS.csv
+    ├── ...
+    └── 2025_09_Setembre_BicingNou_ESTACIONS.csv
 ```
 
-> 📅 **~64 archivos mensuales** · más de **5 años** de historial
+> 📅 **63 archivos mensuales** · más de **5 años** de historial
 
-Cada registro contiene: `bicis disponibles`, `anclajes libres`, `tipo de bici` (mecánica / eléctrica), `estado operativo`, y `marca de tiempo`.
+Cada registro contiene: `station_id`, `num_bikes_available`, `num_bikes_available_types.mechanical`, `num_bikes_available_types.ebike`, `num_docks_available`, `is_installed`, `is_renting`, `is_returning`, `status` y `last_reported`.
 
 ---
 
 ### 📍 Datos estáticos — Información de las estaciones
 
-Un único archivo `2026_06_Juny_BicingNou_INFORMACIO.7.csv` con las características fijas de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
+Archivos `.csv` mensuales en `docs/entregas/informacion/` con las características fijas (o de cambio lento) de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
 
 ```
-docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv
- ├── station_id   ← clave de unión con el historial
- ├── lat / lon    ← coordenadas para calcular distancias
- ├── capacity     ← total de anclajes
- └── address      ← nombre y dirección
+docs/data/
+└── informacion/
+    ├── 2020_07_Juliol_BicingNou_INFORMACIO.csv
+    ├── 2020_08_Agost_BicingNou_INFORMACIO.csv
+    ├── ...
+    └── 2025_09_Setembre_BicingNou_INFORMACIO.csv
 ```
+
+| Campo | Descripción |
+|---|---|
+| `station_id` | Clave de unión con el historial |
+| `lat` / `lon` | Coordenadas para calcular distancias |
+| `capacity` | Total de anclajes |
+| `address` | Nombre y dirección |
+| `physical_configuration` | Tipo de estación |
+| `is_charging_station` | Si dispone de carga para e-bikes |
 
 ---
+
+### 🌤️ Datos meteorológicos — Open-Meteo
+
+Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/4.fetch_clima_barcelona.py`).
+
+- **Coordenadas:** `41.3851`, `2.1734` (Barcelona)
+- **Período:** `2020-07-01` a `2025-09-30`
+- **Variables:** `temperature_2m`, `weather_code`
+- **Zona horaria:** `Europe/Madrid`
+
+| Campo | Descripción |
+|---|---|
+| `datetime` | Fecha y hora |
+| `temperatura_c` | Temperatura a 2 m (°C) |
+| `condicion` | Estado del tiempo traducido (`despejado`, `nublado`, `lluvia`, etc.) |
 
 ### 🔗 Relación entre datasets
 
 ```
-docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv     +     Estado estaciones (mensual)
-      (dónde está y cómo es)              (cómo está en cada momento)
-             │                                       │
-             └─────────── station_id ────────────────┘
+Información de estaciones  +  Estado estaciones  +  Clima
+      (dónde y cómo es)       (cómo está ahora)   (condiciones meteorológicas)
+             │                        │                  │
+             └────── station_id ──────┘                  │
+                                    └────── datetime ────┘
 ```
+
+> La clave `station_id` une las estaciones con su historial; `datetime` permite cruzar el estado de las estaciones con la información meteorológica.
 
 ---
 
@@ -111,13 +137,22 @@ docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv     +     Estado estaciones (mensua
 ```
 📂 Proyecto-Master-DataScience-Evolve-JuanPabloDelzo/
 │
-├── 📄 README.md                   ← Estás aquí
-├── 📄 01_idea-producto.md         ← Descripción del producto
-├── 📄 02_datos-necesarios.md      ← Descripción de los datos
+├── 📄 README.md                      ← Estás aquí
 │
-└── 📂 docs/                      ← (ignorado en Git)
-    ├── 📂 entregas/               ← Datos entregados
-    └── 📄 2026_06_Juny_BicingNou_INFORMACIO.7.csv
+|── 📂 data/                          ← Datos raw (ignorado en Git)
+│   |── 📂 estado/                    ← Historial mensual de estaciones
+│   └── 📂 informacion/               ← Características de estaciones
+|
+├── 📂 docs/                          
+│   └── 📂 entregas/ 
+│       |── 📄 01_idea_producto.md    ← Descripción del producto
+│       └── 📄 02_datos_necesarios.md ← Descripción de los datos
+|
+└── 📂 scripts/                       ← Scripts de carga y descarga
+    |── 1.create_db.py
+    |── 2.insert_informacion.py
+    |── 3.insert_estado.py
+    └── 4.fetch_clima_barcelona.py
 ```
 
 ---
@@ -133,6 +168,6 @@ docs/2026_06_Juny_BicingNou_INFORMACIO.7.csv     +     Estado estaciones (mensua
 
 <div align="center">
 
-*Proyecto académico · Master en Data Science · Evolve*
+*Proyecto final · Máster en Data Science e IA · Evolve*
 
 </div>

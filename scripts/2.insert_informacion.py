@@ -6,7 +6,7 @@ import polars as pl
 import mysql.connector
 from mysql.connector import Error
 
-INFORMACION_DIR = Path(__file__).resolve().parent.parent / "docs" / "entregas" / "informacion"
+INFORMACION_DIR = Path(__file__).resolve().parent.parent / "data" / "informacion"
 files = sorted(INFORMACION_DIR.glob("*.csv"))
 
 ATRIBUTOS = [

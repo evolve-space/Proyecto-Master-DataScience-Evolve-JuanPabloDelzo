@@ -218,7 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Datos pesados
-entregas/
+data/
 
 # Archivos de Devin
 .devin/
+
+# Notebook de consulta
+prevista.ipynb

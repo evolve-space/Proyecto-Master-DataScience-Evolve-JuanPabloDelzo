@@ -1,0 +1,7 @@
+pandas
+polars
+SQLAlchemy
+holidays
+python-dotenv
+mysql-connector-python
+chardet

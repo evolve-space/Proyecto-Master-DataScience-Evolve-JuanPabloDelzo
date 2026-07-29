@@ -118,9 +118,10 @@ Para enriquecer el modelo y analizar la relación entre el clima y el uso de Bic
 |---|---|
 | `date` | Fecha del registro (`YYYY-MM-DD`) |
 | `hour` | Hora del registro (`HH`) |
+| `is_holiday` | `True` si la fecha es festivo en Cataluña, usando el paquete `holidays` |
 | `temp_c` | Temperatura a 2 metros en grados Celsius |
 | `condicion` | Condición meteorológica traducida a partir de `weather_code`: `despejado`, `nublado`, `niebla`, `lluvia`, `nieve`, `tormenta` o `desconocido` |
-| `is_holiday` | `True` si la fecha es festivo en Cataluña, usando el paquete `holidays` |
+
 
 **Script de unión con datos históricos:** `scripts/gold/merge_bicis_clima.py`
 

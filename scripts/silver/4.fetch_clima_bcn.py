@@ -79,7 +79,7 @@ def fetch_clima_barcelona(start=START, end=END):
         
 
     return pd.DataFrame(
-        records, columns=["date", "hour", "temp_c", "condicion", "is_holiday"]
+        records, columns=["date","is_holiday","hour", "temp_c", "condicion"]
     )
 
 

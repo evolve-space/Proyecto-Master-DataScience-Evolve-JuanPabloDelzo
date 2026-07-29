@@ -82,9 +82,10 @@ El script `scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo pa
 |---|---|---|
 | `date` | `str` | Fecha (`YYYY-MM-DD`). |
 | `hour` | `int` | Hora (`HH`). |
+| `is_holiday` | bool | `True` si la fecha es festivo en Cataluña. |
 | `temp_c` | float | Temperatura a 2 metros en °C. |
 | `condicion` | texto | Clasificación textual del `weather_code` (`despejado`, `nublado`, `lluvia`, `nieve`, `tormenta`, `niebla`, `desconocido`). |
-| `is_holiday` | bool | `True` si la fecha es festivo en Cataluña. |
+
 
 ---
 

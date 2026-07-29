@@ -3,11 +3,14 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+import holidays
 import pandas as pd
 
 LAT, LON = 41.3851, 2.1734
-START = "2020-07-01"
+START = "2021-01-01"
 END = "2025-09-30"
+
+_ES_HOLIDAYS = holidays.ES(subdiv="CT", years=range(2021, 2026))
 
 
 def condicion(code):
@@ -61,11 +64,14 @@ def fetch_clima_barcelona(start=START, end=END):
 
         for t, temp, code in zip(times, temps, codes):
             dt = datetime.fromisoformat(t)
+            date_str = dt.strftime("%Y-%m-%d")
             records.append(
                 {
-                    "datetime": dt.strftime("%Y-%m-%d %H:%M:00"),
-                    "temperatura_c": temp,
+                    "date": date_str,
+                    "hour": dt.hour,
+                    "temp_c": temp,
                     "condicion": condicion(code),
+                    "is_holiday": date_str in _ES_HOLIDAYS,
                 }
             )
 
@@ -73,11 +79,13 @@ def fetch_clima_barcelona(start=START, end=END):
         
 
     return pd.DataFrame(
-        records, columns=["datetime", "temperatura_c", "condicion"]
+        records, columns=["date", "hour", "temp_c", "condicion", "is_holiday"]
     )
 
 
 if __name__ == "__main__":
     df = fetch_clima_barcelona()
-    print(df.sample(10))
+    print("\nViendo valores nulos:")
+    print(df.isnull().sum())
+    print(df.head(10))
     print(f"Total filas: {len(df)}")

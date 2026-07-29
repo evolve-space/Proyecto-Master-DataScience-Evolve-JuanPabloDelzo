@@ -25,7 +25,7 @@ Este producto resuelve estas situaciones de forma rápida y clara, combinando in
 3. Se muestra para cada estación:
    - 🚲 **Bicicletas disponibles** para coger.
    - 🔒 **Anclajes libres** para devolver.
-4. El modelo de series temporales estima la disponibilidad futura a partir del histórico y las condiciones meteorológicas.
+4. El modelo de series temporales estima la disponibilidad futura a partir del histórico, las condiciones meteorológicas y el indicador de día festivo.
 
 ---
 
@@ -63,6 +63,7 @@ Este producto resuelve estas situaciones de forma rápida y clara, combinando in
 | 🚲 Bicis disponibles | Cuántas bicicletas puedes coger ahora mismo |
 | 🔒 Anclajes libres | Cuántos sitios tienes para devolver la bici |
 | 🌤️ Condición meteorológica | Estado del tiempo que puede influir en la demanda |
+| 🎉 Día festivo | Indica si la fecha es festivo en Cataluña, afectando la demanda de Bicing |
 | 🔮 Predicción | Disponibilidad estimada en los próximos minutos/horas |
 
 ---
@@ -72,14 +73,14 @@ Este producto resuelve estas situaciones de forma rápida y clara, combinando in
 - **Ahorra tiempo**: no caminas hasta una estación vacía.
 - **Evita frustraciones**: sabes de antemano si hay anclajes libres para devolver.
 - **Es simple**: la información es directa, sin tecnicismos.
-- **Es predictivo**: anticipa la disponibilidad futura usando histórico y clima.
+- **Es predictivo**: anticipa la disponibilidad futura usando histórico, clima y festivos.
 - **Datos en tiempo real**: refleja la disponibilidad actual de cada estación.
 
 ---
 
 ## Tecnología base
 
-Los datos provienen del [Open Data del Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) (información y estado de estaciones) y de la API de [Open-Meteo](https://open-meteo.com/) (datos meteorológicos históricos de Barcelona), combinados para alimentar modelos de predicción de series temporales.
+Los datos provienen del [Open Data del Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) (información y estado de estaciones), de la API de [Open-Meteo](https://open-meteo.com/) (datos meteorológicos históricos de Barcelona) y del calendario de festivos de Cataluña, combinados para alimentar modelos de predicción de series temporales.
 
 ---
 

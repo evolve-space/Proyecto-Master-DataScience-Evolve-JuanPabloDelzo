@@ -62,13 +62,13 @@ Los datos provienen del [Open Data Ajuntament de Barcelona](https://opendata-aju
 
 ### 🕐 Historial temporal — Estado de las estaciones
 
-Archivos mensuales `.csv` con el estado en tiempo real de cada estación, ubicados en `docs/entregas/estado/`, desde julio de **2020** hasta septiembre de **2025**.
+Archivos mensuales `.csv` con el estado en tiempo real de cada estación, ubicados en `data/estado/`, desde enero de **2021** hasta septiembre de **2025**.
 
 ```
-docs/data/
+data/
 └── estado/
-    ├── 2020_07_Juliol_BicingNou_ESTACIONS.csv
-    ├── 2020_08_Agost_BicingNou_ESTACIONS.csv
+    ├── 2021_01_Gener_BicingNou_ESTACIONS.csv
+    ├── 2021_02_Febrer_BicingNou_ESTACIONS.csv
     ├── ...
     └── 2025_09_Setembre_BicingNou_ESTACIONS.csv
 ```
@@ -81,13 +81,13 @@ Cada registro contiene: `station_id`, `num_bikes_available`, `num_bikes_availabl
 
 ### 📍 Datos estáticos — Información de las estaciones
 
-Archivos `.csv` mensuales en `docs/entregas/informacion/` con las características fijas (o de cambio lento) de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
+Archivos `.csv` mensuales en `data/informacion/` con las características fijas (o de cambio lento) de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
 
 ```
-docs/data/
+data/
 └── informacion/
-    ├── 2020_07_Juliol_BicingNou_INFORMACIO.csv
-    ├── 2020_08_Agost_BicingNou_INFORMACIO.csv
+    ├── 2021_01_Gener_BicingNou_INFORMACIO.csv
+    ├── 2021_02_Febrer_BicingNou_INFORMACIO.csv
     ├── ...
     └── 2025_09_Setembre_BicingNou_INFORMACIO.csv
 ```
@@ -105,18 +105,20 @@ docs/data/
 
 ### 🌤️ Datos meteorológicos — Open-Meteo
 
-Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/4.fetch_clima_barcelona.py`).
+Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/silver/4.fetch_clima_bcn.py`).
 
 - **Coordenadas:** `41.3851`, `2.1734` (Barcelona)
-- **Período:** `2020-07-01` a `2025-09-30`
+- **Período:** `2021-01-01` a `2025-09-30`
 - **Variables:** `temperature_2m`, `weather_code`
 - **Zona horaria:** `Europe/Madrid`
 
 | Campo | Descripción |
 |---|---|
-| `datetime` | Fecha y hora |
-| `temperatura_c` | Temperatura a 2 m (°C) |
+| `date` | Fecha del registro (`YYYY-MM-DD`) |
+| `hour` | Hora del registro (`HH`) |
+| `temp_c` | Temperatura a 2 m (°C) |
 | `condicion` | Estado del tiempo traducido (`despejado`, `nublado`, `lluvia`, etc.) |
+| `is_holiday` | `True` si la fecha es festivo en Cataluña |
 
 ### 🔗 Relación entre datasets
 
@@ -125,10 +127,10 @@ Información de estaciones  +  Estado estaciones  +  Clima
       (dónde y cómo es)       (cómo está ahora)   (condiciones meteorológicas)
              │                        │                  │
              └────── station_id ──────┘                  │
-                                    └────── datetime ────┘
+                                    └────── date + hour ─┘
 ```
 
-> La clave `station_id` une las estaciones con su historial; `datetime` permite cruzar el estado de las estaciones con la información meteorológica.
+> La clave `station_id` une las estaciones con su historial; `date` y `hour` permiten cruzar el estado de las estaciones con la información meteorológica.
 
 ---
 
@@ -146,13 +148,19 @@ Información de estaciones  +  Estado estaciones  +  Clima
 ├── 📂 docs/                          
 │   └── 📂 entregas/ 
 │       |── 📄 01_idea_producto.md    ← Descripción del producto
-│       └── 📄 02_datos_necesarios.md ← Descripción de los datos
+│       |── 📄 02_datos_necesarios.md ← Descripción de los datos
+│       └── 📄 03_modelo_datos.md     ← Modelo de datos y capa Gold
 |
-└── 📂 scripts/                       ← Scripts de carga y descarga
-    |── 1.create_db.py
-    |── 2.insert_informacion.py
-    |── 3.insert_estado.py
-    └── 4.fetch_clima_barcelona.py
+└── 📂 scripts/                       ← Scripts de carga y modelado
+    │
+    ├── 📂 silver/                    ← Carga Bronze → Silver (MySQL)
+    │   |── 1.create_db.py
+    │   |── 2.insert_informacion.py
+    │   |── 3.insert_estado.py
+    │   └── 4.fetch_clima_bcn.py
+    │
+    └── 📂 gold/                      ← Preparación y predicción Gold
+        └── merge_bicis_clima.py
 ```
 
 ---

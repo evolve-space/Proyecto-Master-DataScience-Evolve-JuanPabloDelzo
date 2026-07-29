@@ -35,8 +35,8 @@ Bronze (fuentes)      Silver (MySQL)            Gold (analítico)
 
 | Capa | Descripción | Ubicación / implementación |
 |---|---|---|
-| **Bronze** | Datos originales sin transformar: CSV mensuales del Ajuntament y respuesta JSON de Open-Meteo. | `data/informacion/`, `data/estado/`, `4.fetch_clima_barcelona.py` |
-| **Silver** | Datos limpios, validados y modelados en MySQL con PKs, FKs y tipos correctos. | Base de datos `Bicing` (`1.create_db.py`, `2.insert_informacion.py`, `3.insert_estado.py`) |
+| **Bronze** | Datos originales sin transformar: CSV mensuales del Ajuntament y respuesta JSON de Open-Meteo. | `data/informacion/`, `data/estado/`, `scripts/silver/4.fetch_clima_bcn.py` |
+| **Silver** | Datos limpios, validados y modelados en MySQL con PKs, FKs y tipos correctos. | Base de datos `Bicing` (`scripts/silver/1.create_db.py`, `scripts/silver/2.insert_informacion.py`, `scripts/silver/3.insert_estado.py`) |
 | **Gold** | Resultados de predicción de bicicletas y anclajes mediante series temporales con deep learning, a partir de MySQL y el clima. | API REST que expone predicciones en JSON; consumida por el frontend Angular. |
 
 ---
@@ -76,13 +76,15 @@ Archivos CSV mensuales con el prefijo `*_BicingNou_ESTACIONS.csv`. Cada fila es 
 
 ### 2.3 Datos meteorológicos (Open-Meteo)
 
-El script `4.fetch_clima_barcelona.py` consulta la API de Open-Meteo para Barcelona (lat=41.3851, lon=2.1734) en el rango 2020-07-01 a 2025-09-30.
+El script `scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo para Barcelona (lat=41.3851, lon=2.1734) en el rango 2021-01-01 a 2025-09-30.
 
 | Campo generado | Tipo | Descripción |
 |---|---|---|
-| `datetime` | `datetime` | Fecha/hora (Europe/Madrid). |
-| `temperatura_c` | float | Temperatura a 2 metros en °C. |
+| `date` | `str` | Fecha (`YYYY-MM-DD`). |
+| `hour` | `int` | Hora (`HH`). |
+| `temp_c` | float | Temperatura a 2 metros en °C. |
 | `condicion` | texto | Clasificación textual del `weather_code` (`despejado`, `nublado`, `lluvia`, `nieve`, `tormenta`, `niebla`, `desconocido`). |
+| `is_holiday` | bool | `True` si la fecha es festivo en Cataluña. |
 
 ---
 
@@ -90,7 +92,7 @@ El script `4.fetch_clima_barcelona.py` consulta la API de Open-Meteo para Barcel
 
 La base de datos `Bicing` constituye la capa Silver. Aquí los datos ya han sido limpiados, tipados, deduplicados y relacionados mediante claves primarias y foráneas. Los scripts `2.insert_informacion.py` y `3.insert_estado.py` realizan la carga desde Bronze hasta esta capa.
 
-La base de datos `Bicing` se crea con `1.create_db.py` con codificación `utf8mb4_unicode_ci`.
+La base de datos `Bicing` se crea con `scripts/silver/1.create_db.py` con codificación `utf8mb4_unicode_ci`.
 
 ### 3.1 Tabla `informacion`
 
@@ -150,9 +152,9 @@ CREATE TABLE IF NOT EXISTS estado (
 
 ## 4. Pipeline Bronze → Silver (scripts de carga)
 
-Los scripts de la carpeta `scripts/` leen los archivos CSV de la capa Bronze, aplican limpieza y normalización, e insertan el resultado en la capa Silver de MySQL.
+Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bronze, aplican limpieza y normalización, e insertan el resultado en la capa Silver de MySQL.
 
-### 4.1 `2.insert_informacion.py`
+### 4.1 `scripts/silver/2.insert_informacion.py`
 
 - Lectura con **Polars** probando codificaciones `utf8`, `windows-1252` y `utf8-lossy`.
 - Selección de columnas presentes en cada CSV.
@@ -163,16 +165,16 @@ Los scripts de la carpeta `scripts/` leen los archivos CSV de la capa Bronze, ap
 - Deduplicación por `station_id` conservando el último registro.
 - Inserción por lotes de 10.000 con `ON DUPLICATE KEY UPDATE` para mantener la información más reciente.
 
-### 4.2 `3.insert_estado.py`
+### 4.2 `scripts/silver/3.insert_estado.py`
 
-- Lectura por lotes con `pl.read_csv_batched` (máximo 200.000 filas por lote) para reducir uso de memoria.
-- Schema override a `Float64` en columnas numéricas para evitar errores con notación científica.
+- Lectura por lotes con `pl.scan_csv().collect_batches()` (`chunk_size=200_000`) para reducir uso de memoria.
+- Schema override a `Float64` en columnas numéricas y a `Utf8` para `status`, para evitar errores de parseo.
+- Filtrado de registros donde `status == "IN_SERVICE"`.
 - Renombrado de `num_bikes_available_types.mechanical` / `.ebike` y conversión de `last_reported` a `datetime`.
 - Deduplicación dentro de cada lote por `(station_id, datetime)`.
 - Inserción por lotes de 5.000 filas con `INSERT IGNORE` para evitar bloqueos por duplicados.
-- Procesado de archivos del más reciente al más antiguo, de modo que si existe un duplicado se conserva el dato más reciente.
 
-### 4.3 `4.fetch_clima_barcelona.py`
+### 4.3 `scripts/silver/4.fetch_clima_bcn.py`
 
 - Consulta anual a `https://archive-api.open-meteo.com/v1/archive`.
 - Variables `temperature_2m` y `weather_code`.
@@ -191,7 +193,7 @@ El modelo consume los siguientes datos de la capa Silver:
 
 - **Histórico de disponibilidad** (`estado`): ventanas temporales de `num_bikes_available`, `num_docks_available`, mecánicas, eléctricas y anclajes libres.
 - **Metadatos de estación** (`informacion`): `latitud`, `longitud`, `capacity`, `physical_configuration`, `post_code`.
-- **Meteorología** (`clima` o el `DataFrame` generado por `4.fetch_clima_barcelona.py`): `temperatura_c` y `condicion`.
+- **Meteorología** (`clima` o el `DataFrame` generado por `scripts/silver/4.fetch_clima_bcn.py`): `date`, `hour`, `temp_c`, `condicion` e `is_holiday`.
 - **Características temporales**: hora, día de la semana, mes, festivo/puente, etc.
 
 ### 5.2 Arquitectura del modelo (propuesta)
@@ -304,6 +306,6 @@ getPrediction(stationId: number, horizon: number = 60): Observable<PredictionRes
 
 - **Codificación:** toda la base de datos usa `utf8mb4_unicode_ci` para soportar caracteres catalanes y espacios.
 - **Batching:** las inserciones se hacen en lotes (10.000 para `informacion`, 5.000 para `estado`) para evitar problemas de memoria y `max_allowed_packet`.
-- **Idempotencia:** `informacion` usa `ON DUPLICATE KEY UPDATE`; `estado` usa `INSERT IGNORE` procesando archivos del más reciente al más antiguo.
-- **Memoria:** el script `3.insert_estado.py` lee CSV en lotes con Polars (`read_csv_batched`) para poder procesar los ~63 archivos sin cargarlos enteros en RAM.
-- **Clima:** actualmente `4.fetch_clima_barcelona.py` devuelve un DataFrame. Para integrarlo en la capa Silver se recomienda persistirlo en una tabla `clima` con `datetime` como clave primaria. De ese modo el modelo de la capa Gold dispondrá tanto de datos históricos como de variables exógenas para entrenar y atender las peticiones de la API.
+- **Idempotencia:** `informacion` usa `ON DUPLICATE KEY UPDATE`; `estado` usa `INSERT IGNORE` para evitar bloqueos por duplicados.
+- **Memoria:** el script `3.insert_estado.py` lee CSV en lotes con Polars (`scan_csv().collect_batches()`) para poder procesar los ~63 archivos sin cargarlos enteros en RAM.
+- **Clima:** actualmente `scripts/silver/4.fetch_clima_bcn.py` devuelve un DataFrame con `date`, `hour`, `temp_c` y `condicion`. El script `scripts/gold/merge_bicis_clima.py` une este DataFrame con la tabla `estado` de MySQL a partir de `date` y `hour` para construir el dataset de entrenamiento de la capa Gold.

@@ -1,4 +1,3 @@
-import csv
 import sys
 from pathlib import Path
 
@@ -16,6 +15,7 @@ ATRIBUTOS = [
     "num_bikes_available_types.ebike",
     "num_docks_available",
     "last_reported",
+    "status"
 ]
 
 COLUMNAS_FINALES = [
@@ -46,34 +46,45 @@ def _header_columns(file):
 
 
 def _detect_encoding(file):
-    for encoding in ("utf8", "windows-1252", "utf8-lossy"):
+    for encoding, polars_encoding in (("utf-8", "utf8"), ("cp1252", "windows-1252")):
         try:
-            pl.read_csv(file, n_rows=1, encoding=encoding, try_parse_dates=False)
-            return encoding
-        except (UnicodeDecodeError, pl.exceptions.ComputeError):
+            with file.open("r", encoding=encoding) as csv_file:
+                while csv_file.read(1_048_576):
+                    pass
+            return polars_encoding
+        except UnicodeDecodeError:
             continue
-    raise RuntimeError(f"No se pudo detectar la codificación de {file}")
+    return "utf8-lossy"
 
 
 def _read_estado_batched(file):
     present_cols = [col for col in _header_columns(file) if col in ATRIBUTOS]
-    overrides = {col: pl.Float64 for col in present_cols}
+    overrides = {
+        col: pl.Utf8 if col == "status" else pl.Float64 for col in present_cols
+    }
     encoding = _detect_encoding(file)
-    return pl.read_csv_batched(
-        file,
-        columns=present_cols,
-        schema_overrides=overrides,
-        encoding=encoding,
-        try_parse_dates=False,
-        null_values=["NA", "N/A", "NULL", "null", "None", "NaN", "nan"],
-        batch_size=200_000,
+    return (
+        pl.scan_csv(
+            file,
+            schema_overrides=overrides,
+            encoding=encoding,
+            try_parse_dates=False,
+            null_values=["NA", "N/A", "NULL", "null", "None", "NaN", "nan"],
+        )
+        .select(present_cols)
+        .collect_batches(chunk_size=200_000)
     )
 
 
 def _normalizar_df(df):
+    if "status" not in df.columns:
+        df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("status"))
+
     df = df.filter(
-        pl.col("station_id").is_not_null() & pl.col("last_reported").is_not_null()
-    )
+        pl.col("station_id").is_not_null()
+        & pl.col("last_reported").is_not_null()
+        & (pl.col("status") == "IN_SERVICE")
+    ).drop("status")
     df = df.with_columns(pl.col("station_id").cast(pl.Int64, strict=False))
 
     df = df.rename(
@@ -129,22 +140,18 @@ def insert_estado():
             )
 
         total = 0
-        for file in reversed(files):
+        for file in files:
             reader = _read_estado_batched(file)
             archivo_total = 0
-            while True:
-                batches = reader.next_batches(5)
-                if not batches:
-                    break
-                for df in batches:
-                    df = _normalizar_df(df)
-                    for start in range(0, df.height, 5_000):
-                        sub = df.slice(start, 5_000)
-                        rows = [tuple(row) for row in sub.iter_rows(named=False)]
-                        if rows:
-                            cursor.executemany(INSERT_ESTADO, rows)
-                            connection.commit()
-                    archivo_total += df.height
+            for df in reader:
+                df = _normalizar_df(df)
+                for start in range(0, df.height, 5_000):
+                    sub = df.slice(start, 5_000)
+                    rows = [tuple(row) for row in sub.iter_rows(named=False)]
+                    if rows:
+                        cursor.executemany(INSERT_ESTADO, rows)
+                        connection.commit()
+                archivo_total += df.height
             total += archivo_total
             print(f"{file.name}: {archivo_total} registros insertados/actualizados")
 

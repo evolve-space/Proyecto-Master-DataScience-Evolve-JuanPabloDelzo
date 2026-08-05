@@ -54,7 +54,7 @@ def fetch_clima_barcelona(start=START, end=END):
         chunk_end = min(datetime(current.year, 12, 31), final)
         start_str = current.strftime("%Y-%m-%d")
         end_str = chunk_end.strftime("%Y-%m-%d")
-        print(f"Descargando {start_str} a {end_str}...")
+        #print(f"Descargando {start_str} a {end_str}...")
 
         data = fetch_chunk(start_str, end_str)
         hourly = data.get("hourly", {})
@@ -69,7 +69,7 @@ def fetch_clima_barcelona(start=START, end=END):
                 {
                     "date": date_str,
                     "hour": dt.hour,
-                    "temp_c": temp,
+                    "temperature_c": temp,
                     "condicion": condicion(code),
                     "is_holiday": date_str in _ES_HOLIDAYS,
                 }
@@ -79,7 +79,7 @@ def fetch_clima_barcelona(start=START, end=END):
         
 
     return pd.DataFrame(
-        records, columns=["date","is_holiday","hour", "temp_c", "condicion"]
+        records, columns=["date","is_holiday","hour", "temperature_c", "condicion"]
     )
 
 

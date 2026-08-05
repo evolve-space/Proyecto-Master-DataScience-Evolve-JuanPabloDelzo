@@ -5,3 +5,6 @@ holidays
 python-dotenv
 mysql-connector-python
 chardet
+numpy
+scikit-learn
+tensorflow

@@ -40,9 +40,9 @@ def cargar_estado_station(station_id: int):
     query = """
           WITH aux_table AS (
           SELECT 
-              num_bikes_available_mechanical AS n_bikes_mechanical,
-              num_bikes_available_ebike AS n_bikes_ebike, 
               datetime,
+              num_bikes_available_mechanical AS nbm,
+              num_bikes_available_ebike AS nbe, 
               HOUR(datetime) AS hour,
               HOUR(datetime) + MINUTE(datetime)/60 AS h,
               dayofweek(datetime) AS day_week,
@@ -56,8 +56,12 @@ def cargar_estado_station(station_id: int):
           ORDER BY datetime ASC)
           SELECT 
               datetime,
-              n_bikes_mechanical,
-              n_bikes_ebike,
+              nbm,
+              nbe,
+              LAG(nbm,1)
+                  OVER(ORDER BY datetime) AS lag_nbm,
+              LAG(nbe,1)
+                  OVER(ORDER BY datetime) AS lag_nbe,
               hour,
               ROUND(SIN(2*PI()*h/24),4) AS hour_sin, 
               ROUND(COS(2*PI()*h/24),4) AS hour_cos, 
@@ -114,14 +118,20 @@ def bicis(station_id: int):
     # (y los registros ya insertados por rellenar_huecos_tiempo) con el
     # último valor conocido (forward fill), de forma que las filas queden
     # equidistantes en el tiempo.
+    original_index = df_merged.index
     df_merged_filled = df_merged.asfreq('5min', method='ffill')
+    # Marcar las filas que han sido generadas por asfreq/ffill (1) frente a
+    # las filas originales reales (0).
+    df_merged_filled["is_imputed"] = (
+        ~df_merged_filled.index.isin(original_index)
+    ).astype(int)
     return df_merged_filled
 
 ###################################
 #####  EJECUCIÓN MANUAL ###########
 ###################################
 if __name__ == "__main__":
-    id_est=2
+    id_est=30
     df = bicis(id_est)
     print(f"\nEstación {id_est}:")
     print(df.tail(10))

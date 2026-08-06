@@ -12,32 +12,16 @@ END = "2025-09-30"
 
 _ES_HOLIDAYS = holidays.ES(subdiv="CT", years=range(2021, 2026))
 
-
-def condicion(code):
-    if code is None:
-        return ""
-    if code == 0:
-        return "despejado"
-    if code in (1, 2, 3):
-        return "nublado"
-    if code in (45, 48):
-        return "niebla"
-    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
-        return "lluvia"
-    if code in (71, 73, 75, 77, 85, 86):
-        return "nieve"
-    if code in (95, 96, 99):
-        return "tormenta"
-    return "desconocido"
-
-
 def fetch_chunk(start, end):
     params = {
         "latitude": LAT,
         "longitude": LON,
         "start_date": start,
         "end_date": end,
-        "hourly": "temperature_2m,weather_code",
+        "hourly": (
+            "temperature_2m,relative_humidity_2m,rain,cloud_cover,"
+            "wind_speed_10m"
+        ),
         "timezone": "Europe/Madrid",
     }
     url = "https://archive-api.open-meteo.com/v1/archive?" + urlencode(params)
@@ -59,10 +43,31 @@ def fetch_clima_barcelona(start=START, end=END):
         data = fetch_chunk(start_str, end_str)
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
-        temps = hourly.get("temperature_2m", [])
-        codes = hourly.get("weather_code", [])
 
-        for t, temp, code in zip(times, temps, codes):
+        def _get(key):
+            return hourly.get(key, [None] * len(times))
+
+        temps = _get("temperature_2m")
+        humidity = _get("relative_humidity_2m")
+        rain = _get("rain")
+        cloud_cover = _get("cloud_cover")
+        wind_speed = _get("wind_speed_10m")
+
+        for (
+            t,
+            temp,
+            hum,
+            rain_val,
+            cloud,
+            wind,
+        ) in zip(
+            times,
+            temps,
+            humidity,
+            rain,
+            cloud_cover,
+            wind_speed,
+        ):
             dt = datetime.fromisoformat(t)
             date_str = dt.strftime("%Y-%m-%d")
             records.append(
@@ -70,16 +75,28 @@ def fetch_clima_barcelona(start=START, end=END):
                     "date": date_str,
                     "hour": dt.hour,
                     "temperature_c": temp,
-                    "condicion": condicion(code),
+                    "relative_humidity_2m": hum,
+                    "rain": rain_val,
+                    "cloud_cover": cloud,
+                    "wind_speed_10m": wind,
                     "is_holiday": date_str in _ES_HOLIDAYS,
                 }
             )
 
         current = chunk_end + timedelta(days=1)
-        
 
     return pd.DataFrame(
-        records, columns=["date","is_holiday","hour", "temperature_c", "condicion"]
+        records,
+        columns=[
+            "date",
+            "is_holiday",
+            "hour",
+            "temperature_c",
+            "relative_humidity_2m",
+            "rain",
+            "cloud_cover",
+            "wind_speed_10m",
+        ],
     )
 
 

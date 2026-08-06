@@ -14,7 +14,7 @@ STEP_MINUTES = 5
 # Horizontes de predicción solicitados: 5 y 10 minutos vista.
 HORIZONTES_MIN = (5, 10)
 LOOKBACK = 24  # nº de pasos pasados (24 * 5min = 2 horas) usados como entrada de la LSTM
-TARGET_COLS = ["n_bikes_mechanical", "n_bikes_ebike"]
+TARGET_COLS = ["nbm", "nbe"]
 
 
 def _import_bicis():
@@ -38,11 +38,28 @@ def preparar_datos(df: pd.DataFrame):
     df = df.copy()
     df["is_holiday"] = df["is_holiday"].astype(int)
 
-    condicion_dummies = pd.get_dummies(df["condicion"], prefix="condicion")
-    df_features = pd.concat(
-        [df[["n_day_week", "hour", "is_holiday", "temperature_c"]], condicion_dummies],
-        axis=1,
-    ).astype(float)
+    time_cols = [
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "year_sin",
+        "year_cos",
+    ]
+    lag_cols = ["lag_nbm", "lag_nbe"]
+    weather_cols = [
+        "temperature_c",
+        "relative_humidity_2m",
+        "rain",
+        "cloud_cover",
+        "wind_speed_10m",
+    ]
+
+    df_features = df[
+        time_cols + lag_cols + weather_cols + ["is_holiday", "is_imputed"]
+    ].astype(float)
+
+    df_features = df_features.ffill().bfill()
 
     feature_cols = list(df_features.columns)
     return df_features, feature_cols
@@ -120,7 +137,7 @@ def entrenar_y_predecir(station_id: int):
     model.fit(
         X_train, y_train,
         validation_data=(X_test, y_test),
-        epochs=5,
+        epochs=3,
         batch_size=64,
         callbacks=[early_stopping],
         verbose=1,
@@ -144,14 +161,14 @@ def entrenar_y_predecir(station_id: int):
     print(f"\nÚltimo timestamp disponible: {ultimo_timestamp}")
     for h_min, fila in zip(HORIZONTES_MIN, pred_matrix):
         pred_dt = ultimo_timestamp + pd.Timedelta(minutes=h_min)
-        mech_pred, ebike_pred = fila
+        mech_pred, ebike_pred = np.maximum(fila, 0)
         print(
             f"+{h_min} min ({pred_dt}): "
-            f"n_bikes_mechanical≈{mech_pred:.2f} | n_bikes_ebike≈{ebike_pred:.2f}"
+            f"nbm≈{mech_pred:.2f} | nbe≈{ebike_pred:.2f}"
         )
 
     return model, scaler_x, scaler_y
 
 
 if __name__ == "__main__":
-    entrenar_y_predecir(2)
+    entrenar_y_predecir(30)

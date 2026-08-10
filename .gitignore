@@ -225,3 +225,6 @@ data/
 
 # Notebook de consulta
 prevista.ipynb
+
+# Archivo de consulta de variación de capacidades
+analisis_cap.csv

@@ -1,7 +1,5 @@
 # 🔍 Entrega 4 — Diseño del análisis y estrategia de modelado
 
-> Esta entrega es **incremental**: no sustituye a `01_idea_producto.md`, `02_datos_necesarios.md` ni `03_modelo_datos.md`, sino que se apoya en ellas. Cuando el diseño del análisis obliga a precisar o ajustar una decisión previa, se indica explícitamente en la sección **"Trazabilidad con entregas anteriores"** al final del documento.
-
 ---
 
 ## 1. Problema que se busca resolver
@@ -95,4 +93,4 @@ Antes de implementar la clase `LSTMbicis` (`scripts/main.py`) se valoró la alte
 
 - **Respecto a `02_datos_necesarios.md`**: se confirma que las variables meteorológicas ya redefinidas en esa entrega (`temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`) son precisamente las que este análisis evaluará por su relación con la disponibilidad; no se añaden ni eliminan fuentes de datos nuevas.
 - **Respecto a `03_modelo_datos.md`**: la inclusión de `nd` (anclajes libres) como feature de entrada, ya documentada en la sección 5.2 de esa entrega, se somete aquí a verificación empírica (hipótesis H4) en lugar de asumirse sin más. Si el análisis mostrara que `nd` es completamente redundante, se actualizaría `03_modelo_datos.md` para reflejar su exclusión, dejando constancia del motivo.
-- No se modifica ninguna decisión de arquitectura de datos (capas Bronze/Silver/Gold) ni del pipeline de carga; esta entrega se limita al diseño del análisis exploratorio y su conexión con la estrategia de modelado ya implementada.
+

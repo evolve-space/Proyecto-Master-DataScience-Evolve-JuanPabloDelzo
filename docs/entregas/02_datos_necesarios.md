@@ -7,7 +7,7 @@ Para predecir la disponibilidad de bicicletas y anclajes en las estaciones, se r
 
 Además, se enriquece el dataset con datos meteorológicos históricos de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/silver/4.fetch_clima_bcn.py`).
 
-Para preparar el dataset de modelado, se ha añadido el script `scripts/gold/merge_bicis_clima.py`, que carga el histórico de una estación desde MySQL y lo une con el DataFrame del clima.
+Para preparar el dataset de modelado, se ha añadido el script `scripts/gold/bikes.py`, que carga el histórico de una estación desde MySQL (con lags y variables temporales cíclicas ya calculadas en SQL) y lo une con el DataFrame del clima.
 
 ---
 
@@ -109,7 +109,7 @@ Para enriquecer el modelo y analizar la relación entre el clima y el uso de Bic
 
 - **Coordenadas:** latitud `41.3851`, longitud `2.1734` (Barcelona)
 - **Período:** `2021-01-01` a `2025-09-30`
-- **Variables horarias:** `temperature_2m`, `weather_code`
+- **Variables horarias:** `temperature_2m`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`
 - **Zona horaria:** `Europe/Madrid`
 
 **Campos que genera el script:**
@@ -119,16 +119,19 @@ Para enriquecer el modelo y analizar la relación entre el clima y el uso de Bic
 | `date` | Fecha del registro (`YYYY-MM-DD`) |
 | `hour` | Hora del registro (`HH`) |
 | `is_holiday` | `True` si la fecha es festivo en Cataluña, usando el paquete `holidays` |
-| `temp_c` | Temperatura a 2 metros en grados Celsius |
-| `condicion` | Condición meteorológica traducida a partir de `weather_code`: `despejado`, `nublado`, `niebla`, `lluvia`, `nieve`, `tormenta` o `desconocido` |
+| `temperature_c` | Temperatura a 2 metros en grados Celsius |
+| `relative_humidity_2m` | Humedad relativa a 2 metros (%) |
+| `rain` | Precipitación en forma de lluvia (mm) |
+| `cloud_cover` | Cobertura de nubes (%) |
+| `wind_speed_10m` | Velocidad del viento a 10 metros (km/h) |
 
 
-**Script de unión con datos históricos:** `scripts/gold/merge_bicis_clima.py`
+**Script de unión con datos históricos:** `scripts/gold/bikes.py`
 
-- Lee la tabla `estado` de MySQL filtrando por `station_id`.
+- Lee la tabla `estado` de MySQL filtrando por `station_id`, calculando en SQL los lags (`lag_nbm`, `lag_nbe`) y las variables temporales cíclicas (`hour_sin/cos`, `dow_sin/cos`, `year_sin/cos`).
 - Genera las columnas `date` y `hour` a partir de `datetime`.
 - Llama a `fetch_clima_barcelona()` desde `scripts/silver/4.fetch_clima_bcn.py`.
-- Realiza un `merge` por `date` y `hour` entre el histórico y el clima.
+- Realiza un `merge` por `date` y `hour` entre el histórico y el clima, y reindexa a una frecuencia fija de 5 minutos (marcando las filas imputadas en `is_imputed`).
 
 ---
 
@@ -142,7 +145,7 @@ Para enriquecer el modelo y analizar la relación entre el clima y el uso de Bic
 | Entrenar un modelo de **predicción** | `data/estado/` + clima |
 | Filtrar por **tipo de bici** (mecánica / eléctrica) | `data/estado/` |
 | Incorporar el impacto del **clima** | API Open-Meteo → `scripts/silver/4.fetch_clima_bcn.py` |
-| Unir histórico y clima por estación | `scripts/gold/merge_bicis_clima.py` |
+| Unir histórico y clima por estación | `scripts/gold/bikes.py` |
 
 ---
 

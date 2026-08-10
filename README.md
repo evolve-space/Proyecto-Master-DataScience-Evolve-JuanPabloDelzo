@@ -109,15 +109,18 @@ Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/silv
 
 - **Coordenadas:** `41.3851`, `2.1734` (Barcelona)
 - **Período:** `2021-01-01` a `2025-09-30`
-- **Variables:** `temperature_2m`, `weather_code`
+- **Variables:** `temperature_2m`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`
 - **Zona horaria:** `Europe/Madrid`
 
 | Campo | Descripción |
 |---|---|
 | `date` | Fecha del registro (`YYYY-MM-DD`) |
 | `hour` | Hora del registro (`HH`) |
-| `temp_c` | Temperatura a 2 m (°C) |
-| `condicion` | Estado del tiempo traducido (`despejado`, `nublado`, `lluvia`, etc.) |
+| `temperature_c` | Temperatura a 2 m (°C) |
+| `relative_humidity_2m` | Humedad relativa a 2 m (%) |
+| `rain` | Precipitación en forma de lluvia (mm) |
+| `cloud_cover` | Cobertura de nubes (%) |
+| `wind_speed_10m` | Velocidad del viento a 10 m (km/h) |
 | `is_holiday` | `True` si la fecha es festivo en Cataluña |
 
 ### 🔗 Relación entre datasets
@@ -140,6 +143,7 @@ Información de estaciones  +  Estado estaciones  +  Clima
 📂 Proyecto-Master-DataScience-Evolve-JuanPabloDelzo/
 │
 ├── 📄 README.md                      ← Estás aquí
+├── 📄 .env.example                   ← Plantilla de credenciales MySQL
 │
 |── 📂 data/                          ← Datos raw (ignorado en Git)
 │   |── 📂 estado/                    ← Historial mensual de estaciones
@@ -153,14 +157,17 @@ Información de estaciones  +  Estado estaciones  +  Clima
 |
 └── 📂 scripts/                       ← Scripts de carga y modelado
     │
+    ├── 📄 main.py                    ← Clase LSTMbicis: entrena y predice
+    │
     ├── 📂 silver/                    ← Carga Bronze → Silver (MySQL)
     │   |── 1.create_db.py
     │   |── 2.insert_informacion.py
     │   |── 3.insert_estado.py
-    │   └── 4.fetch_clima_bcn.py
+    │   |── 4.fetch_clima_bcn.py
+    │   └── db_config.py              ← Credenciales MySQL vía .env
     │
-    └── 📂 gold/                      ← Preparación y predicción Gold
-        └── merge_bicis_clima.py
+    └── 📂 gold/                      ← Preparación de features
+        └── bikes.py
 ```
 
 ---
@@ -176,6 +183,6 @@ Información de estaciones  +  Estado estaciones  +  Clima
 
 <div align="center">
 
-*Proyecto final · Máster en Data Science e IA · Evolve*
+*Proyecto final · Máster en Data Science y Desarrollo de IA · Evolve*
 
 </div>

@@ -6,7 +6,9 @@ import polars as pl
 import mysql.connector
 from mysql.connector import Error
 
-INFORMACION_DIR = Path(__file__).resolve().parent.parent / "data" / "informacion"
+from db_config import get_connection_params
+
+INFORMACION_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "informacion"
 files = sorted(INFORMACION_DIR.glob("*.csv"))
 
 ATRIBUTOS = [
@@ -143,12 +145,7 @@ def load_informacion():
 def insert_informacion(dataframe):
     connection = None
     try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            database="Bicing",
-        )
+        connection = mysql.connector.connect(**get_connection_params("Bicing"))
         cursor = connection.cursor()
         batch_size = 10_000
         for start in range(0, dataframe.height, batch_size):

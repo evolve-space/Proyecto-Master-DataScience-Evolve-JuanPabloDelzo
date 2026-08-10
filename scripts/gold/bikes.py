@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
 
-
-DB_URL = "mysql+mysqlconnector://root@localhost:3306/Bicing"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "silver"))
+from db_config import get_sqlalchemy_url
 
 
 def _import_fetch_clima_bcn():
@@ -43,6 +43,7 @@ def cargar_estado_station(station_id: int):
               datetime,
               num_bikes_available_mechanical AS nbm,
               num_bikes_available_ebike AS nbe, 
+              num_docks_available AS nd,
               HOUR(datetime) AS hour,
               HOUR(datetime) + MINUTE(datetime)/60 AS h,
               dayofweek(datetime) AS day_week,
@@ -62,6 +63,7 @@ def cargar_estado_station(station_id: int):
                   OVER(ORDER BY datetime) AS lag_nbm,
               LAG(nbe,1)
                   OVER(ORDER BY datetime) AS lag_nbe,
+              nd,
               hour,
               ROUND(SIN(2*PI()*h/24),4) AS hour_sin, 
               ROUND(COS(2*PI()*h/24),4) AS hour_cos, 
@@ -71,7 +73,7 @@ def cargar_estado_station(station_id: int):
               ROUND(COS(2*PI()*day_year/days_in_year),4) AS year_cos
           FROM aux_table
           """
-    engine = create_engine(DB_URL)
+    engine = create_engine(get_sqlalchemy_url())
     with engine.connect() as conn:
         df = pd.read_sql(query, conn, params=(station_id,))
     return df
@@ -114,17 +116,18 @@ def bicis(station_id: int):
     # Eliminando las columnas no útiles para el análisis
     df_merged = df_merged.drop(columns=["date","hour"])
 
-    # ÚLTIMO PASO: Reindexar a una frecuencia fija de 5 minutos, rellenando los huecos
+    #Quiero almacenar el índice original para marcar las filas imputadas
+    original_index = df_merged.index
+
+    # Reindexar a una frecuencia fija de 5 minutos, rellenando los huecos
     # (y los registros ya insertados por rellenar_huecos_tiempo) con el
     # último valor conocido (forward fill), de forma que las filas queden
     # equidistantes en el tiempo.
-    original_index = df_merged.index
     df_merged_filled = df_merged.asfreq('5min', method='ffill')
-    # Marcar las filas que han sido generadas por asfreq/ffill (1) frente a
-    # las filas originales reales (0).
-    df_merged_filled["is_imputed"] = (
-        ~df_merged_filled.index.isin(original_index)
-    ).astype(int)
+    # Marcar las filas que han sido generadas por asfreq/ffill (True) frente a
+    # las filas originales reales (False) a través  de un atributo booleano
+    df_merged_filled["is_imputed"] = ~df_merged_filled.index.isin(original_index)
+    
     return df_merged_filled
 
 ###################################

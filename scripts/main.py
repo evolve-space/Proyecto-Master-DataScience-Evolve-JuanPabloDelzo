@@ -17,158 +17,201 @@ LOOKBACK = 24  # nº de pasos pasados (24 * 5min = 2 horas) usados como entrada 
 TARGET_COLS = ["nbm", "nbe"]
 
 
-def _import_bicis():
-    """Importa dinámicamente la función `bicis` desde scripts/gold/bikes.py."""
-    module_path = Path(__file__).resolve().parent / "gold" / "bikes.py"
-    spec = importlib.util.spec_from_file_location("bikes", module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["bikes"] = module
-    spec.loader.exec_module(module)
-    return module.bicis
+class LSTMbicis:
+    """Encapsula todo el pipeline de carga, preparación, entrenamiento y
+    predicción de disponibilidad de bicis (mecánicas y eléctricas) mediante
+    una red LSTM multi-horizonte.
 
-
-def preparar_datos(df: pd.DataFrame):
-    """Codifica variables categóricas/booleanas y separa features y targets.
-
-    Returns:
-        df_features: DataFrame con las columnas de entrada ya codificadas.
-        feature_cols: nombres finales de columnas de entrada (incluye
-            las dummies de `condicion`).
+    Uso:
+        modelo = LSTMbicis(station_id=30)
+        modelo.entrenar_y_predecir()
+        # Tras entrenar, quedan disponibles:
+        modelo.model, modelo.scaler_x, modelo.scaler_y, modelo.df
     """
-    df = df.copy()
-    df["is_holiday"] = df["is_holiday"].astype(int)
 
-    time_cols = [
-        "hour_sin",
-        "hour_cos",
-        "dow_sin",
-        "dow_cos",
-        "year_sin",
-        "year_cos",
-    ]
-    lag_cols = ["lag_nbm", "lag_nbe"]
-    weather_cols = [
-        "temperature_c",
-        "relative_humidity_2m",
-        "rain",
-        "cloud_cover",
-        "wind_speed_10m",
-    ]
+    def __init__(
+        self,
+        station_id: int,
+        step_minutes: int = STEP_MINUTES,
+        horizontes_min=HORIZONTES_MIN,
+        lookback: int = LOOKBACK,
+        target_cols=TARGET_COLS,
+    ):
+        self.station_id = station_id
+        self.step_minutes = step_minutes
+        self.horizontes_min = horizontes_min
+        self.lookback = lookback
+        self.target_cols = target_cols
 
-    df_features = df[
-        time_cols + lag_cols + weather_cols + ["is_holiday", "is_imputed"]
-    ].astype(float)
+        self.df = None
+        self.feature_cols = None
+        self.model = None
+        self.scaler_x = None
+        self.scaler_y = None
 
-    df_features = df_features.ffill().bfill()
+    @staticmethod
+    def _import_bicis():
+        """Importa dinámicamente la función `bicis` desde scripts/gold/bikes.py."""
+        module_path = Path(__file__).resolve().parent / "gold" / "bikes.py"
+        spec = importlib.util.spec_from_file_location("bikes", module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["bikes"] = module
+        spec.loader.exec_module(module)
+        return module.bicis
 
-    feature_cols = list(df_features.columns)
-    return df_features, feature_cols
+    def preparar_datos(self, df: pd.DataFrame):
+        """Codifica variables categóricas/booleanas y separa features y targets.
 
+        Returns:
+            df_features: DataFrame con las columnas de entrada ya codificadas.
+            feature_cols: nombres finales de columnas de entrada (incluye
+                las dummies de `condicion`).
+        """
+        df = df.copy()
+        #Tranformando boleanas  positivos (1) y negativos (0)
+        df = df.assign(
+            is_imputed=df.is_imputed.astype(int),
+            is_holiday=df.is_holiday.astype(int)
+        )
+        #df["is_holiday"] = df["is_holiday"].astype(int)
 
-def construir_secuencias(features: np.ndarray, targets: np.ndarray, lookback: int, horizon_steps):
-    """Construye secuencias (X) y salidas multi-horizonte (y) para la LSTM.
+        time_cols = [
+            "hour_sin",
+            "hour_cos",
+            "dow_sin",
+            "dow_cos",
+            "year_sin",
+            "year_cos",
+        ]
+        lag_cols = ["lag_nbm", "lag_nbe"]
+        docks_cols = ["nd"]
+        weather_cols = [
+            "temperature_c",
+            "relative_humidity_2m",
+            "rain",
+            "cloud_cover",
+            "wind_speed_10m",
+        ]
 
-    Para cada instante `i`, `X` contiene la ventana `features[i-lookback:i]`
-    e `y` contiene los valores de `targets` en `i + h - 1` para cada `h` en
-    `horizon_steps` (h=1 -> 5 min vista, h=2 -> 10 min vista).
-    """
-    n_samples = len(features)
-    max_h = max(horizon_steps)
+        df_features = df[
+            time_cols + lag_cols + docks_cols + weather_cols + ["is_holiday", "is_imputed"]
+        ].astype(float)
 
-    X, y = [], []
-    for i in range(lookback, n_samples - max_h + 1):
-        X.append(features[i - lookback:i])
-        fila_y = []
-        for h in horizon_steps:
-            fila_y.append(targets[i + h - 1])
-        y.append(np.concatenate(fila_y))
+        df_features = df_features.ffill().bfill()
 
-    return np.array(X), np.array(y)
+        feature_cols = list(df_features.columns)
+        return df_features, feature_cols
 
+    @staticmethod
+    def construir_secuencias(features: np.ndarray, targets: np.ndarray, lookback: int, horizon_steps):
+        """Construye secuencias (X) y salidas multi-horizonte (y) para la LSTM.
 
-def construir_modelo(input_shape, n_outputs):
-    model = Sequential([
-        Input(shape=input_shape),
-        LSTM(64, activation="tanh", return_sequences=True),
-        Dropout(0.2),
-        LSTM(32, activation="tanh", return_sequences=False),
-        Dropout(0.2),
-        Dense(32, activation="relu"),
-        Dense(n_outputs, activation="linear"),
-    ])
-    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
-    return model
+        Para cada instante `i`, `X` contiene la ventana `features[i-lookback:i]`
+        e `y` contiene los valores de `targets` en `i + h - 1` para cada `h` en
+        `horizon_steps` (h=1 -> 5 min vista, h=2 -> 10 min vista).
+        """
+        n_samples = len(features)
+        max_h = max(horizon_steps)
 
+        X, y = [], []
+        for i in range(lookback, n_samples - max_h + 1):
+            X.append(features[i - lookback:i])
+            fila_y = []
+            for h in horizon_steps:
+                fila_y.append(targets[i + h - 1])
+            y.append(np.concatenate(fila_y))
 
-def entrenar_y_predecir(station_id: int):
-    bicis = _import_bicis()
-    df = bicis(station_id)
+        return np.array(X), np.array(y)
 
-    df_features, feature_cols = preparar_datos(df)
-    df_targets = df[TARGET_COLS].astype(float)
+    @staticmethod
+    def construir_modelo(input_shape, n_outputs):
+        model = Sequential([
+            Input(shape=input_shape),
+            LSTM(64, activation="tanh", return_sequences=True),
+            Dropout(0.2),
+            LSTM(32, activation="tanh", return_sequences=False),
+            Dropout(0.2),
+            Dense(32, activation="relu"),
+            Dense(n_outputs, activation="linear"),
+        ])
+        model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+        return model
 
-    horizon_steps = [h // STEP_MINUTES for h in HORIZONTES_MIN]
+    def entrenar_y_predecir(self):
+        bicis = self._import_bicis()
+        df = bicis(self.station_id)
+        self.df = df
 
-    # Escalado de entradas y salidas (fit solo con datos de entrenamiento).
-    n_total = len(df_features)
-    n_test = max(int(n_total * 0.1), max(horizon_steps) + LOOKBACK + 1)
-    n_train = n_total - n_test
+        df_features, feature_cols = self.preparar_datos(df)
+        self.feature_cols = feature_cols
+        df_targets = df[self.target_cols].astype(float)
 
-    scaler_x = MinMaxScaler()
-    scaler_y = MinMaxScaler()
-    scaler_x.fit(df_features.iloc[:n_train])
-    scaler_y.fit(df_targets.iloc[:n_train])
+        horizon_steps = [h // self.step_minutes for h in self.horizontes_min]
 
-    features_scaled = scaler_x.transform(df_features)
-    targets_scaled = scaler_y.transform(df_targets)
+        # Escalado de entradas y salidas (fit solo con datos de entrenamiento).
+        n_total = len(df_features)
+        n_test = max(int(n_total * 0.1), max(horizon_steps) + self.lookback + 1)
+        n_train = n_total - n_test
 
-    X, y = construir_secuencias(features_scaled, targets_scaled, LOOKBACK, horizon_steps)
+        scaler_x = MinMaxScaler()
+        scaler_y = MinMaxScaler()
+        scaler_x.fit(df_features.iloc[:n_train])
+        scaler_y.fit(df_targets.iloc[:n_train])
+        self.scaler_x = scaler_x
+        self.scaler_y = scaler_y
 
-    split_idx = n_train - LOOKBACK
-    X_train, X_test = X[:split_idx], X[split_idx:]
-    y_train, y_test = y[:split_idx], y[split_idx:]
+        features_scaled = scaler_x.transform(df_features)
+        targets_scaled = scaler_y.transform(df_targets)
 
-    n_outputs = y.shape[1]
-    model = construir_modelo(input_shape=(LOOKBACK, X.shape[2]), n_outputs=n_outputs)
+        X, y = self.construir_secuencias(features_scaled, targets_scaled, self.lookback, horizon_steps)
 
-    early_stopping = EarlyStopping(
-        monitor="val_loss", patience=5, restore_best_weights=True
-    )
-    model.fit(
-        X_train, y_train,
-        validation_data=(X_test, y_test),
-        epochs=3,
-        batch_size=64,
-        callbacks=[early_stopping],
-        verbose=1,
-    )
+        split_idx = n_train - self.lookback
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
 
-    loss, mae = model.evaluate(X_test, y_test, verbose=0)
-    print(f"\nEvaluación en test -> loss(mse): {loss:.4f} | mae: {mae:.4f}")
+        n_outputs = y.shape[1]
+        model = self.construir_modelo(input_shape=(self.lookback, X.shape[2]), n_outputs=n_outputs)
+        self.model = model
 
-    # Predicción a partir de la última ventana disponible (último valor de
-    # tiempo en el índice de `df`).
-    ultima_ventana = features_scaled[-LOOKBACK:].reshape(1, LOOKBACK, X.shape[2])
-    pred_scaled = model.predict(ultima_ventana, verbose=0)[0]
-
-    # pred_scaled = [mech_5min, mech_10min, ebike_5min, ebike_10min]
-    n_targets = len(TARGET_COLS)
-    n_horizons = len(horizon_steps)
-    pred_matrix_scaled = pred_scaled.reshape(n_horizons, n_targets)
-    pred_matrix = scaler_y.inverse_transform(pred_matrix_scaled)
-
-    ultimo_timestamp = df.index[-1]
-    print(f"\nÚltimo timestamp disponible: {ultimo_timestamp}")
-    for h_min, fila in zip(HORIZONTES_MIN, pred_matrix):
-        pred_dt = ultimo_timestamp + pd.Timedelta(minutes=h_min)
-        mech_pred, ebike_pred = np.maximum(fila, 0)
-        print(
-            f"+{h_min} min ({pred_dt}): "
-            f"nbm≈{mech_pred:.2f} | nbe≈{ebike_pred:.2f}"
+        early_stopping = EarlyStopping(
+            monitor="val_loss", patience=5, restore_best_weights=True
+        )
+        model.fit(
+            X_train, y_train,
+            validation_data=(X_test, y_test),
+            epochs=3,
+            batch_size=64,
+            callbacks=[early_stopping],
+            verbose=1,
         )
 
-    return model, scaler_x, scaler_y
+        loss, mae = model.evaluate(X_test, y_test, verbose=0)
+        print(f"\nEvaluación en test -> loss(mse): {loss:.4f} | mae: {mae:.4f}")
+
+        # Predicción a partir de la última ventana disponible (último valor de
+        # tiempo en el índice de `df`).
+        ultima_ventana = features_scaled[-self.lookback:].reshape(1, self.lookback, X.shape[2])
+        pred_scaled = model.predict(ultima_ventana, verbose=0)[0]
+
+        # pred_scaled = [mech_5min, mech_10min, ebike_5min, ebike_10min]
+        n_targets = len(self.target_cols)
+        n_horizons = len(horizon_steps)
+        pred_matrix_scaled = pred_scaled.reshape(n_horizons, n_targets)
+        pred_matrix = scaler_y.inverse_transform(pred_matrix_scaled)
+
+        ultimo_timestamp = df.index[-1]
+        print(f"\nÚltimo timestamp disponible: {ultimo_timestamp}")
+        for h_min, fila in zip(self.horizontes_min, pred_matrix):
+            pred_dt = ultimo_timestamp + pd.Timedelta(minutes=h_min)
+            mech_pred, ebike_pred = np.maximum(fila, 0)
+            print(
+                f"+{h_min} min ({pred_dt}): "
+                f"nbm≈{mech_pred:.2f} | nbe≈{ebike_pred:.2f}"
+            )
+
+        return model, scaler_x, scaler_y
 
 
 if __name__ == "__main__":
-    entrenar_y_predecir(30)
+    modelo = LSTMbicis(station_id=33)
+    modelo.entrenar_y_predecir()

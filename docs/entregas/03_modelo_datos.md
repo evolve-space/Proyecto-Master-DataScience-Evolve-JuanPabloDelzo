@@ -83,9 +83,11 @@ El script `scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo pa
 | `date` | `str` | Fecha (`YYYY-MM-DD`). |
 | `hour` | `int` | Hora (`HH`). |
 | `is_holiday` | bool | `True` si la fecha es festivo en Cataluña. |
-| `temp_c` | float | Temperatura a 2 metros en °C. |
-| `condicion` | texto | Clasificación textual del `weather_code` (`despejado`, `nublado`, `lluvia`, `nieve`, `tormenta`, `niebla`, `desconocido`). |
-
+| `temperature_c` | float | Temperatura a 2 metros en °C. |
+| `relative_humidity_2m` | float | Humedad relativa a 2 metros (%). |
+| `rain` | float | Precipitación en forma de lluvia (mm). |
+| `cloud_cover` | float | Cobertura de nubes (%). |
+| `wind_speed_10m` | float | Velocidad del viento a 10 metros (km/h). |
 
 ---
 
@@ -178,61 +180,79 @@ Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bro
 ### 4.3 `scripts/silver/4.fetch_clima_bcn.py`
 
 - Consulta anual a `https://archive-api.open-meteo.com/v1/archive`.
-- Variables `temperature_2m` y `weather_code`.
-- Mapea los códigos WMO a etiquetas textuales en `condicion`.
+- Variables: `temperature_2m`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`.
+- Marca `is_holiday` usando el paquete `holidays` (Cataluña).
 - Devuelve un `DataFrame` con una fila por hora.
 
 ---
 
-## 5. Capa Gold — Predicción vía API
+## 5. Capa Gold — Feature engineering y predicción
 
-La capa Gold **no persiste las predicciones en la base de datos**. El modelo de *deep learning* de series temporales se ejecuta a demanda (o mediante un job programado), genera las predicciones y un servicio **API REST** las expone en formato **JSON** para que el frontend Angular las consuma directamente.
+La capa Gold **no persiste resultados en la base de datos**. Se compone de dos scripts:
 
-### 5.1 Entrada del modelo (features)
+- `scripts/gold/bikes.py`: construye el dataset de features por estación (SQL + Python) y lo une con el clima.
+- `scripts/main.py`: entrena el modelo LSTM y genera la predicción multi-horizonte (implementación actual, no una propuesta).
 
-El modelo consume los siguientes datos de la capa Silver:
+Ambos se ejecutan a demanda; no existen tablas `gold.*` en MySQL. Exponer las predicciones vía API REST para el frontend Angular queda como trabajo futuro (ver sección 5.4).
 
-- **Histórico de disponibilidad** (`estado`): ventanas temporales de `num_bikes_available`, `num_docks_available`, mecánicas, eléctricas y anclajes libres.
-- **Metadatos de estación** (`informacion`): `latitud`, `longitud`, `capacity`, `physical_configuration`, `post_code`.
-- **Meteorología** (`clima` o el `DataFrame` generado por `scripts/silver/4.fetch_clima_bcn.py`): `date`, `hour`, `temp_c`, `condicion` e `is_holiday`.
-- **Características temporales**: hora, día de la semana, mes, festivo/puente, etc.
+### 5.1 `scripts/gold/bikes.py` — construcción de features
 
-### 5.2 Arquitectura del modelo (propuesta)
+La función `cargar_estado_station(station_id)` ejecuta una consulta SQL contra la tabla `estado` que ya genera, en el propio motor de MySQL:
 
-- **Enfoque**: predicción multivariante y multistep de series temporales.
-- **Arquitectura**: red neuronal profunda (LSTM, GRU, Transformer o Temporal Fusion Transformer) que recibe secuencias de histórico y variables exógenas (clima + estáticas).
-- **Salidas**:
-  - Número estimado de bicis disponibles (`predicted_num_bikes_available`, mecánicas y eléctricas).
-  - Número estimado de anclajes libres (`predicted_num_docks_available`).
-- **Frecuencia**: predicción a corto plazo, p. ej. próximos 15–60 minutos por estación.
-- **Inferencia**: el modelo se carga en el servicio API; cada petición ejecuta una predicción o recupera un caché reciente (p. ej. Redis/memoria), sin necesidad de tablas `gold.*` en MySQL.
+| Campo generado | Descripción |
+|---|---|
+| `nbm`, `nbe` | Alias de `num_bikes_available_mechanical` / `_ebike`. |
+| `nd` | Alias de `num_docks_available` (anclajes libres). |
+| `lag_nbm`, `lag_nbe` | Valor de `nbm`/`nbe` en el instante anterior (`LAG` con ventana `ORDER BY datetime`). |
+| `hour_sin`, `hour_cos` | Codificación cíclica de la hora del día (a partir de `hour + minute/60`). |
+| `dow_sin`, `dow_cos` | Codificación cíclica del día de la semana. |
+| `year_sin`, `year_cos` | Codificación cíclica del día del año (considera años bisiestos). |
 
-### 5.3 API de predicciones (contrato propuesto)
+La función `bicis(station_id)`:
 
-#### `GET /api/predictions/{station_id}?horizon=60`
+1. Llama a `cargar_estado_station` y castea `datetime`.
+2. Llama a `fetch_clima_barcelona()` (`scripts/silver/4.fetch_clima_bcn.py`) para obtener el clima horario y el flag `is_holiday`.
+3. Hace `merge` entre el estado (a resolución de 5 min) y el clima (a resolución horaria) usando `date` + `hour`.
+4. Reindexa la serie a una frecuencia fija de 5 minutos (`asfreq` + forward-fill) para rellenar huecos temporales.
+5. Añade la columna booleana `is_imputed`, que marca `True` en las filas generadas por el relleno (frente a las filas originales reales).
 
-Devuelve la predicción para una estación concreta en el horizonte solicitado (minutos).
+El resultado es un único `DataFrame`, indexado por `datetime`, con todas las features listas para el modelo.
 
-**Respuesta 200:**
+### 5.2 `scripts/main.py` — modelo LSTM multi-horizonte
+
+La clase `LSTMbicis` encapsula todo el pipeline de entrenamiento y predicción:
+
+```python
+modelo = LSTMbicis(station_id=30)
+modelo.entrenar_y_predecir()
+# tras entrenar: modelo.model, modelo.scaler_x, modelo.scaler_y, modelo.df
+```
+
+- **Targets** (`TARGET_COLS`): `nbm` y `nbe` (bicis mecánicas y eléctricas disponibles).
+- **Horizontes de predicción** (`HORIZONTES_MIN`): 5 y 10 minutos vista, con pasos de 5 minutos (`STEP_MINUTES`).
+- **Ventana de entrada** (`LOOKBACK`): 24 pasos pasados (2 horas) por muestra.
+- **Features de entrada** (`preparar_datos`): variables temporales cíclicas, `lag_nbm`/`lag_nbe`, `nd`, variables meteorológicas (`temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`), `is_holiday` e `is_imputed`. Todas se escalan con `MinMaxScaler` (ajustado solo con el tramo de entrenamiento).
+- **Arquitectura** (`construir_modelo`): `LSTM(64) → Dropout(0.2) → LSTM(32) → Dropout(0.2) → Dense(32, relu) → Dense(n_outputs, linear)`, compilada con `adam` / `mse`, métrica `mae`.
+- **Entrenamiento**: split cronológico 90/10 (train/test), `EarlyStopping` sobre `val_loss`.
+- **Post-procesado**: las predicciones se recortan a `>= 0` (`np.maximum(fila, 0)`), ya que `nbm`/`nbe` no pueden ser negativos.
+
+### 5.3 API de predicciones (contrato propuesto — pendiente de implementar)
+
+#### `GET /api/predictions/{station_id}?horizon=10`
+
+Devolvería la predicción para una estación concreta en el horizonte solicitado (minutos), envolviendo `LSTMbicis.entrenar_y_predecir()`.
+
+**Respuesta 200 (formato alineado con las salidas actuales de `main.py`):**
 
 ```json
 {
-  "station_id": 1,
-  "address": "Passeig de Gràcia, 1",
-  "latitud": 41.3925,
-  "longitud": 2.1651,
-  "horizon_minutes": 60,
+  "station_id": 30,
+  "last_timestamp": "2025-09-30 21:51:23",
   "forecast": [
-    {
-      "forecast_datetime": "2025-10-01 09:00:00",
-      "predicted_num_bikes_available": 5,
-      "predicted_num_bikes_available_mechanical": 2,
-      "predicted_num_bikes_available_ebike": 3,
-      "predicted_num_docks_available": 8,
-    }
+    { "horizon_minutes": 5,  "nbm": 11.24, "nbe": 0.44 },
+    { "horizon_minutes": 10, "nbm": 11.27, "nbe": 0.61 }
   ],
-  "model_version": "lstm-v1.2",
-  "generated_at": "2025-09-30 20:00:00"
+  "model_version": "lstm-v1"
 }
 ```
 
@@ -244,26 +264,31 @@ Devuelve predicciones para todas las estaciones dentro de un radio (metros).
 
 Fuerza la recarga del modelo o un nuevo entrenamiento. No se recomienda exponer sin autenticación.
 
-### 5.4 Flujo de la capa Gold
+### 5.4 Flujo de la capa Gold (actual + futuro)
 
 ```
-Silver (MySQL)                         Gold (API)
-   │                                          │
-   ├── estado  ─────┐                         │
-   ├── informacion ─┼─►  Modelo DL series     ├──► GET /api/predictions/{id}
-   └── clima    ────┘      temporales         ├──► GET /api/predictions/nearby
-                                              │
-                                              ▼
-                                       Frontend Angular
+Silver (MySQL: estado + informacion) ──┐
+                                        ▼
+                          gold/bikes.py: cargar_estado_station()
+                          + merge con clima (Open-Meteo) + reindex 5min
+                                        │
+                                        ▼
+                    main.py: LSTMbicis.entrenar_y_predecir()
+                                        │
+                                        ▼
+                    Predicción nbm / nbe a 5 y 10 min vista
+                                        │
+                                        ▼
+              (pendiente) API REST ──► Frontend Angular
 ```
 
 ### 5.5 Relación capa Gold con el resto
 
-- El modelo consume `estado`, `informacion` y `clima` de la capa Silver.
-- Las predicciones se generan y se sirven directamente por la API; no se almacenan en MySQL.
-- El frontend Angular puede enriquecer la predicción con datos estáticos de `informacion` (dirección, capacidad, coordenadas) y del clima.
+- `gold/bikes.py` consume `estado` e `informacion` (FK) de la capa Silver, y el clima de Open-Meteo.
+- `main.py` consume el `DataFrame` de `bikes.py` y entrena/predice sin persistir nada en MySQL.
+- Exponer las predicciones vía API para que el frontend Angular las consuma es el siguiente paso pendiente.
 
-### 5.6 Ejemplo de consumo desde Angular
+### 5.6 Ejemplo de consumo desde Angular (futuro)
 
 ```typescript
 // Servicio Angular
@@ -290,16 +315,22 @@ getPrediction(stationId: number, horizon: number = 60): Observable<PredictionRes
 │    address      │         └────────────────────┘
 │    post_code    │                   │
 │    physical_... │                   │ N:1
-└─────────────────┘                   ▼
-                            ┌────────────────────┐
-                            │       clima        │
-                            │    (dimensión)     │
-                            ├────────────────────┤
-                            │ PK datetime        │
-                            │    temperatura_c   │
-                            │    condicion       │
-                            └────────────────────┘
+└─────────────────┘                   ▼ (merge en memoria, no FK en MySQL)
+                            ┌───────────────────────────┐
+                            │           clima           │
+                            │        (dimensión)        │
+                            ├───────────────────────────┤
+                            │ PK date + hour            │
+                            │    temperature_c          │
+                            │    relative_humidity_2m   │
+                            │    rain                   │
+                            │    cloud_cover            │
+                            │    wind_speed_10m         │
+                            │    is_holiday             │
+                            └───────────────────────────┘
 ```
+
+> `clima` no es una tabla de MySQL: es el `DataFrame` que devuelve `fetch_clima_barcelona()` y que `gold/bikes.py` une en memoria con `estado` (por `date` + `hour`).
 
 ---
 
@@ -309,4 +340,5 @@ getPrediction(stationId: number, horizon: number = 60): Observable<PredictionRes
 - **Batching:** las inserciones se hacen en lotes (10.000 para `informacion`, 5.000 para `estado`) para evitar problemas de memoria y `max_allowed_packet`.
 - **Idempotencia:** `informacion` usa `ON DUPLICATE KEY UPDATE`; `estado` usa `INSERT IGNORE` para evitar bloqueos por duplicados.
 - **Memoria:** el script `3.insert_estado.py` lee CSV en lotes con Polars (`scan_csv().collect_batches()`) para poder procesar los ~63 archivos sin cargarlos enteros en RAM.
-- **Clima:** actualmente `scripts/silver/4.fetch_clima_bcn.py` devuelve un DataFrame con `date`, `hour`, `temp_c` y `condicion`. El script `scripts/gold/merge_bicis_clima.py` une este DataFrame con la tabla `estado` de MySQL a partir de `date` y `hour` para construir el dataset de entrenamiento de la capa Gold.
+- **Clima:** `scripts/silver/4.fetch_clima_bcn.py` devuelve un DataFrame con `date`, `hour`, `temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m` e `is_holiday`. El script `scripts/gold/bikes.py` une este DataFrame con la tabla `estado` de MySQL a partir de `date` y `hour` para construir el dataset de entrenamiento de la capa Gold.
+- **Credenciales:** el acceso a MySQL ya no está hardcodeado en los scripts. `scripts/silver/db_config.py` centraliza la lectura de credenciales desde variables de entorno (cargadas con `python-dotenv` desde un archivo `.env` en la raíz, no versionado). Ver `.env.example` para la plantilla de variables (`MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`).

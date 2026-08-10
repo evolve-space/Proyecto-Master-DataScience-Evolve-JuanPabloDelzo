@@ -5,7 +5,9 @@ import polars as pl
 import mysql.connector
 from mysql.connector import Error
 
-ESTADO_DIR = Path(__file__).resolve().parent.parent / "data" / "estado"
+from db_config import get_connection_params
+
+ESTADO_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "estado"
 files = sorted(ESTADO_DIR.glob("*.csv"))
 
 ATRIBUTOS = [
@@ -126,12 +128,7 @@ def _normalizar_df(df):
 def insert_estado():
     connection = None
     try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            database="Bicing",
-        )
+        connection = mysql.connector.connect(**get_connection_params("Bicing"))
         cursor = connection.cursor()
         cursor.execute("SELECT COUNT(*) FROM informacion")
         if cursor.fetchone()[0] == 0:

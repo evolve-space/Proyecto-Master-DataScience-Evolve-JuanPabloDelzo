@@ -3,6 +3,8 @@ import sys
 import mysql.connector
 from mysql.connector import Error
 
+from db_config import get_connection_params
+
 DATABASE_NAME = "Bicing"
 
 
@@ -54,11 +56,7 @@ def main():
     connection = None
 
     try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-        )
+        connection = mysql.connector.connect(**get_connection_params())
         cursor = connection.cursor()
         create_database(cursor)
         cursor.close()

@@ -31,7 +31,7 @@ Este proyecto es, en esencia, un problema de **predicción de series temporales 
 
 ### 2.1 Preguntas que queremos responder con los datos
 
-1. ¿Cómo varía la disponibilidad de bicis (`nbm`, `nbe`) a lo largo del día y de la semana en una estación? ¿Hay patrones horarios repetibles (p. ej. picos de salida por la mañana, de llegada por la tarde)?
+1. ¿Cómo varía la disponibilidad de bicis mecánicas y eléctricas (`nbm`, `nbe`) a lo largo del día y de la semana en una estación? ¿Hay patrones horarios repetibles (p. ej. picos de salida por la mañana, de llegada por la tarde)?
 2. ¿Cuánta información aporta el valor inmediatamente anterior (`lag_nbm`, `lag_nbe`) sobre el valor futuro? ¿A partir de qué horizonte deja de ser fiable como predictor por sí solo?
 3. ¿Existe relación entre el clima (`temperature_c`, `rain`, `wind_speed_10m`, `cloud_cover`, `relative_humidity_2m`) y el uso de la estación (por ejemplo, menos rotación en días de lluvia)?
 4. ¿Los días festivos (`is_holiday`) muestran un patrón de disponibilidad distinto al de un día laborable equivalente?

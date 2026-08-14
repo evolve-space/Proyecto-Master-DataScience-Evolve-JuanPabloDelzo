@@ -36,12 +36,19 @@ class LSTMbicis:
         horizontes_min=HORIZONTES_MIN,
         lookback: int = LOOKBACK,
         target_cols=TARGET_COLS,
+        val_frac: float = 0.1,
+        test_frac: float = 0.1,
     ):
         self.station_id = station_id
         self.step_minutes = step_minutes
         self.horizontes_min = horizontes_min
         self.lookback = lookback
         self.target_cols = target_cols
+        # Tres tramos temporales independientes: train (resto), val (early
+        # stopping / selección de modelo) y test (evaluación final, nunca
+        # visto durante el entrenamiento ni la selección de hiperparámetros).
+        self.val_frac = val_frac
+        self.test_frac = test_frac
 
         self.df = None
         self.feature_cols = None
@@ -73,8 +80,7 @@ class LSTMbicis:
             is_imputed=df.is_imputed.astype(int),
             is_holiday=df.is_holiday.astype(int)
         )
-        #df["is_holiday"] = df["is_holiday"].astype(int)
-
+        
         time_cols = [
             "hour_sin",
             "hour_cos",
@@ -147,12 +153,25 @@ class LSTMbicis:
         df_targets = df[self.target_cols].astype(float)
 
         horizon_steps = [h // self.step_minutes for h in self.horizontes_min]
+        min_block = max(horizon_steps) + self.lookback + 1
 
-        # Escalado de entradas y salidas (fit solo con datos de entrenamiento).
+        # Tres tramos temporales *disjuntos y en orden cronológico*:
+        # train -> val -> test. El bloque de test queda completamente al
+        # margen del entrenamiento y de la selección de modelo (EarlyStopping
+        # usa únicamente el bloque de validación), por lo que la métrica
+        # final sobre test es una estimación independiente del error.
         n_total = len(df_features)
-        n_test = max(int(n_total * 0.1), max(horizon_steps) + self.lookback + 1)
-        n_train = n_total - n_test
+        n_test = max(int(n_total * self.test_frac), min_block)
+        n_val = max(int(n_total * self.val_frac), min_block)
+        n_train = n_total - n_val - n_test
+        if n_train <= min_block:
+            raise ValueError(
+                "Serie demasiado corta para separar train/val/test con el "
+                f"lookback y horizonte actuales (n_total={n_total})."
+            )
 
+        # El escalado se ajusta SOLO con el tramo de entrenamiento, para que
+        # ni la validación ni el test filtren información hacia el fit.
         scaler_x = MinMaxScaler()
         scaler_y = MinMaxScaler()
         scaler_x.fit(df_features.iloc[:n_train])
@@ -165,9 +184,18 @@ class LSTMbicis:
 
         X, y = self.construir_secuencias(features_scaled, targets_scaled, self.lookback, horizon_steps)
 
-        split_idx = n_train - self.lookback
-        X_train, X_test = X[:split_idx], X[split_idx:]
-        y_train, y_test = y[:split_idx], y[split_idx:]
+        split_train_val = n_train - self.lookback
+        split_val_test = n_train + n_val - self.lookback
+        X_train, X_val, X_test = (
+            X[:split_train_val],
+            X[split_train_val:split_val_test],
+            X[split_val_test:],
+        )
+        y_train, y_val, y_test = (
+            y[:split_train_val],
+            y[split_train_val:split_val_test],
+            y[split_val_test:],
+        )
 
         n_outputs = y.shape[1]
         model = self.construir_modelo(input_shape=(self.lookback, X.shape[2]), n_outputs=n_outputs)
@@ -178,13 +206,15 @@ class LSTMbicis:
         )
         model.fit(
             X_train, y_train,
-            validation_data=(X_test, y_test),
+            validation_data=(X_val, y_val),
             epochs=3,
             batch_size=64,
             callbacks=[early_stopping],
             verbose=1,
         )
 
+        # Test: bloque cronológicamente posterior, no usado ni en el fit ni
+        # en el EarlyStopping -> métrica de error independiente.
         loss, mae = model.evaluate(X_test, y_test, verbose=0)
         print(f"\nEvaluación en test -> loss(mse): {loss:.4f} | mae: {mae:.4f}")
 

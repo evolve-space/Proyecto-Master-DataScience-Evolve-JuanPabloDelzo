@@ -233,7 +233,7 @@ modelo.entrenar_y_predecir()
 - **Ventana de entrada** (`LOOKBACK`): 24 pasos pasados (2 horas) por muestra.
 - **Features de entrada** (`preparar_datos`): variables temporales cíclicas, `lag_nbm`/`lag_nbe`, `nd`, variables meteorológicas (`temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`), `is_holiday` e `is_imputed`. Todas se escalan con `MinMaxScaler` (ajustado solo con el tramo de entrenamiento).
 - **Arquitectura** (`construir_modelo`): `LSTM(64) → Dropout(0.2) → LSTM(32) → Dropout(0.2) → Dense(32, relu) → Dense(n_outputs, linear)`, compilada con `adam` / `mse`, métrica `mae`.
-- **Entrenamiento**: split cronológico 90/10 (train/test), `EarlyStopping` sobre `val_loss`.
+- **Entrenamiento**: split cronológico en **tres tramos disjuntos** train/val/test (80/10/10 por defecto, `val_frac`/`test_frac`), con `EarlyStopping` sobre `val_loss` monitorizado únicamente en el tramo de validación; el tramo de test nunca participa en el entrenamiento ni en la selección de pesos. *(Actualizado en `04_analisis_modelado.md`, sección 5: la versión inicial reutilizaba el tramo de test como `validation_data`, lo que introducía fuga de información en la métrica final; ver detalle y justificación de la corrección en esa entrega.)*
 - **Post-procesado**: las predicciones se recortan a `>= 0` (`np.maximum(fila, 0)`), ya que `nbm`/`nbe` no pueden ser negativos.
 
 ### 5.3 API de predicciones (contrato propuesto — pendiente de implementar)

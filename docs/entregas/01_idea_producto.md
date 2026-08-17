@@ -82,6 +82,8 @@ Este producto resuelve estas situaciones de forma rápida y clara, combinando in
 
 Los datos provienen del [Open Data del Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) (información y estado de estaciones), de la API de [Open-Meteo](https://open-meteo.com/) (datos meteorológicos históricos de Barcelona) y del calendario de festivos de Cataluña, combinados para alimentar modelos de predicción de series temporales.
 
+La interfaz de usuario está desarrollada en **React** con **Vite** y gestionada con el gestor de paquetes `pnpm`, consumiendo las predicciones del backend a través de una API REST.
+
 ---
 
 

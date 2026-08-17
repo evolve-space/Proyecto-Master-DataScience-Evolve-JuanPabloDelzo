@@ -105,7 +105,7 @@ data/
 
 ### 🌤️ Datos meteorológicos — Open-Meteo
 
-Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`scripts/silver/4.fetch_clima_bcn.py`).
+Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`backend/scripts/silver/4.fetch_clima_bcn.py`).
 
 - **Coordenadas:** `41.3851`, `2.1734` (Barcelona)
 - **Período:** `2021-01-01` a `2025-09-30`
@@ -144,31 +144,47 @@ Información de estaciones  +  Estado estaciones  +  Clima
 │
 ├── 📄 README.md                      ← Estás aquí
 ├── 📄 .env.example                   ← Plantilla de credenciales MySQL
+├── 📄 requirements.txt               ← Dependencias del backend
 │
 |── 📂 data/                          ← Datos raw (ignorado en Git)
 │   |── 📂 estado/                    ← Historial mensual de estaciones
 │   └── 📂 informacion/               ← Características de estaciones
 |
-├── 📂 docs/                          
+├── 📂 docs/                          ← Entregas del máster
 │   └── 📂 entregas/ 
-│       |── 📄 01_idea_producto.md    ← Descripción del producto
-│       |── 📄 02_datos_necesarios.md ← Descripción de los datos
-│       └── 📄 03_modelo_datos.md     ← Modelo de datos y capa Gold
+│       ├── 📄 01_idea_producto.md    ← Descripción del producto
+│       ├── 📄 02_datos_necesarios.md ← Descripción de los datos
+│       ├── 📄 03_modelo_datos.md     ← Modelo de datos y capa Gold
+│       └── 📄 04_analisis_modelado.md
 |
-└── 📂 scripts/                       ← Scripts de carga y modelado
+├── 📂 frontend/                       ← Interfaz de usuario en React + Vite
+│   ├── 📄 package.json
+│   ├── 📄 pnpm-lock.yaml
+│   ├── 📄 vite.config.js
+│   ├── 📄 index.html
+│   ├── 📂 public/
+│   └── 📂 src/
+│       ├── 📄 App.jsx
+│       ├── 📄 main.jsx
+│       └── 📂 assets/
+│
+└── 📂 backend/scripts/                        ← Scripts de carga y modelado (backend)
     │
-    ├── 📄 main.py                    ← Clase LSTMbicis: entrena y predice
+    ├── 📄 main.py                     ← Clase LSTMbicis: entrena y predice
     │
-    ├── 📂 silver/                    ← Carga Bronze → Silver (MySQL)
-    │   |── 1.create_db.py
-    │   |── 2.insert_informacion.py
-    │   |── 3.insert_estado.py
-    │   |── 4.fetch_clima_bcn.py
-    │   └── db_config.py              ← Credenciales MySQL vía .env
+    ├── 📂 silver/                     ← Carga Bronze → Silver (MySQL)
+    │   ├── 1.create_db.py
+    │   ├── 2.insert_informacion.py
+    │   ├── 3.insert_estado.py
+    │   ├── 4.fetch_clima_bcn.py
+    │   └── db_config.py               ← Credenciales MySQL vía .env
     │
-    └── 📂 gold/                      ← Preparación de features
+    └── 📂 gold/                       ← Preparación de features
         └── bikes.py
 ```
+
+> **Frontend**: creado con `pnpm create vite@latest frontend -- --template react`.  
+> Para levantarlo: `cd frontend && pnpm install && pnpm dev`.
 
 ---
 

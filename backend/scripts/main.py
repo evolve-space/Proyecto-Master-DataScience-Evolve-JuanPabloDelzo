@@ -58,7 +58,7 @@ class LSTMbicis:
 
     @staticmethod
     def _import_bicis():
-        """Importa dinámicamente la función `bicis` desde scripts/gold/bikes.py."""
+        """Importa dinámicamente la función `bicis` desde backend/scripts/gold/bikes.py."""
         module_path = Path(__file__).resolve().parent / "gold" / "bikes.py"
         spec = importlib.util.spec_from_file_location("bikes", module_path)
         module = importlib.util.module_from_spec(spec)

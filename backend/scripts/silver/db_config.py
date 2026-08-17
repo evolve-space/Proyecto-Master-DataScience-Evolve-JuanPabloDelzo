@@ -14,7 +14,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
 DB_HOST = os.getenv("MYSQL_HOST")
@@ -55,7 +55,7 @@ def get_connection_params(database: str | None = None) -> dict:
 
 
 def get_sqlalchemy_url(database: str = DB_NAME) -> str:
-    """Construye la URL de conexión para SQLAlchemy (usada en scripts/gold/bikes.py)."""
+    """Construye la URL de conexión para SQLAlchemy (usada en backend/scripts/gold/bikes.py)."""
     if not DB_PASSWORD:
         raise RuntimeError(
             "La variable de entorno MYSQL_PASSWORD no está definida. "

@@ -7,7 +7,7 @@ from mysql.connector import Error
 
 from db_config import get_connection_params
 
-ESTADO_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "estado"
+ESTADO_DIR = Path(__file__).resolve().parent.parent.parent.parent / "backend" / "data" / "estado"
 files = sorted(ESTADO_DIR.glob("*.csv"))
 
 ATRIBUTOS = [

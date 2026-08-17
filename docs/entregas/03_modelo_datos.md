@@ -1,6 +1,6 @@
 # 🗂️ Modelo de Datos y Capa Gold
 
-Este documento describe el diseño técnico del modelo de datos del proyecto **Bicing Cerca de Mí**: desde la capa **Bronze** (fuentes originales sin procesar), pasando por la capa **Silver** en MySQL (datos limpios y modelados) hasta la capa **Gold**, que expone los resultados de predicción a través de una **API** para el frontend Angular.
+Este documento describe el diseño técnico del modelo de datos del proyecto **Bicing Cerca de Mí**: desde la capa **Bronze** (fuentes originales sin procesar), pasando por la capa **Silver** en MySQL (datos limpios y modelados) hasta la capa **Gold**, que expone los resultados de predicción a través de una **API** para el frontend React (desarrollado con Vite y gestionado con pnpm).
 
 ---
 
@@ -35,9 +35,9 @@ Bronze (fuentes)      Silver (MySQL)            Gold (analítico)
 
 | Capa | Descripción | Ubicación / implementación |
 |---|---|---|
-| **Bronze** | Datos originales sin transformar: CSV mensuales del Ajuntament y respuesta JSON de Open-Meteo. | `data/informacion/`, `data/estado/`, `scripts/silver/4.fetch_clima_bcn.py` |
-| **Silver** | Datos limpios, validados y modelados en MySQL con PKs, FKs y tipos correctos. | Base de datos `Bicing` (`scripts/silver/1.create_db.py`, `scripts/silver/2.insert_informacion.py`, `scripts/silver/3.insert_estado.py`) |
-| **Gold** | Resultados de predicción de bicicletas y anclajes mediante series temporales con deep learning, a partir de MySQL y el clima. | API REST que expone predicciones en JSON; consumida por el frontend Angular. |
+| **Bronze** | Datos originales sin transformar: CSV mensuales del Ajuntament y respuesta JSON de Open-Meteo. | `data/informacion/`, `data/estado/`, `backend/scripts/silver/4.fetch_clima_bcn.py` |
+| **Silver** | Datos limpios, validados y modelados en MySQL con PKs, FKs y tipos correctos. | Base de datos `Bicing` (`backend/scripts/silver/1.create_db.py`, `backend/scripts/silver/2.insert_informacion.py`, `backend/scripts/silver/3.insert_estado.py`) |
+| **Gold** | Resultados de predicción de bicicletas y anclajes mediante series temporales con deep learning, a partir de MySQL y el clima. | API REST que expone predicciones en JSON; consumida por el frontend React. |
 
 ---
 
@@ -76,7 +76,7 @@ Archivos CSV mensuales con el prefijo `*_BicingNou_ESTACIONS.csv`. Cada fila es 
 
 ### 2.3 Datos meteorológicos (Open-Meteo)
 
-El script `scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo para Barcelona (lat=41.3851, lon=2.1734) en el rango 2021-01-01 a 2025-09-30.
+El script `backend/scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo para Barcelona (lat=41.3851, lon=2.1734) en el rango 2021-01-01 a 2025-09-30.
 
 | Campo generado | Tipo | Descripción |
 |---|---|---|
@@ -95,7 +95,7 @@ El script `scripts/silver/4.fetch_clima_bcn.py` consulta la API de Open-Meteo pa
 
 La base de datos `Bicing` constituye la capa Silver. Aquí los datos ya han sido limpiados, tipados, deduplicados y relacionados mediante claves primarias y foráneas. Los scripts `2.insert_informacion.py` y `3.insert_estado.py` realizan la carga desde Bronze hasta esta capa.
 
-La base de datos `Bicing` se crea con `scripts/silver/1.create_db.py` con codificación `utf8mb4_unicode_ci`.
+La base de datos `Bicing` se crea con `backend/scripts/silver/1.create_db.py` con codificación `utf8mb4_unicode_ci`.
 
 ### 3.1 Tabla `informacion`
 
@@ -155,9 +155,9 @@ CREATE TABLE IF NOT EXISTS estado (
 
 ## 4. Pipeline Bronze → Silver (scripts de carga)
 
-Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bronze, aplican limpieza y normalización, e insertan el resultado en la capa Silver de MySQL.
+Los scripts de la carpeta `backend/scripts/silver/` leen los archivos CSV de la capa Bronze, aplican limpieza y normalización, e insertan el resultado en la capa Silver de MySQL.
 
-### 4.1 `scripts/silver/2.insert_informacion.py`
+### 4.1 `backend/scripts/silver/2.insert_informacion.py`
 
 - Lectura con **Polars** probando codificaciones `utf8`, `windows-1252` y `utf8-lossy`.
 - Selección de columnas presentes en cada CSV.
@@ -168,7 +168,7 @@ Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bro
 - Deduplicación por `station_id` conservando el último registro.
 - Inserción por lotes de 10.000 con `ON DUPLICATE KEY UPDATE` para mantener la información más reciente.
 
-### 4.2 `scripts/silver/3.insert_estado.py`
+### 4.2 `backend/scripts/silver/3.insert_estado.py`
 
 - Lectura por lotes con `pl.scan_csv().collect_batches()` (`chunk_size=200_000`) para reducir uso de memoria.
 - Schema override a `Float64` en columnas numéricas y a `Utf8` para `status`, para evitar errores de parseo.
@@ -177,7 +177,7 @@ Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bro
 - Deduplicación dentro de cada lote por `(station_id, datetime)`.
 - Inserción por lotes de 5.000 filas con `INSERT IGNORE` para evitar bloqueos por duplicados.
 
-### 4.3 `scripts/silver/4.fetch_clima_bcn.py`
+### 4.3 `backend/scripts/silver/4.fetch_clima_bcn.py`
 
 - Consulta anual a `https://archive-api.open-meteo.com/v1/archive`.
 - Variables: `temperature_2m`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`.
@@ -190,12 +190,12 @@ Los scripts de la carpeta `scripts/silver/` leen los archivos CSV de la capa Bro
 
 La capa Gold **no persiste resultados en la base de datos**. Se compone de dos scripts:
 
-- `scripts/gold/bikes.py`: construye el dataset de features por estación (SQL + Python) y lo une con el clima.
-- `scripts/main.py`: entrena el modelo LSTM y genera la predicción multi-horizonte (implementación actual, no una propuesta).
+- `backend/scripts/gold/bikes.py`: construye el dataset de features por estación (SQL + Python) y lo une con el clima.
+- `backend/scripts/main.py`: entrena el modelo LSTM y genera la predicción multi-horizonte (implementación actual, no una propuesta).
 
-Ambos se ejecutan a demanda; no existen tablas `gold.*` en MySQL. Exponer las predicciones vía API REST para el frontend Angular queda como trabajo futuro (ver sección 5.4).
+Ambos se ejecutan a demanda; no existen tablas `gold.*` en MySQL. El frontend React ya está creado en la carpeta `frontend/`; exponer las predicciones vía API REST para que lo consuma queda como siguiente paso (ver sección 5.4).
 
-### 5.1 `scripts/gold/bikes.py` — construcción de features
+### 5.1 `backend/scripts/gold/bikes.py` — construcción de features
 
 La función `cargar_estado_station(station_id)` ejecuta una consulta SQL contra la tabla `estado` que ya genera, en el propio motor de MySQL:
 
@@ -211,14 +211,14 @@ La función `cargar_estado_station(station_id)` ejecuta una consulta SQL contra 
 La función `bicis(station_id)`:
 
 1. Llama a `cargar_estado_station` y castea `datetime`.
-2. Llama a `fetch_clima_barcelona()` (`scripts/silver/4.fetch_clima_bcn.py`) para obtener el clima horario y el flag `is_holiday`.
+2. Llama a `fetch_clima_barcelona()` (`backend/scripts/silver/4.fetch_clima_bcn.py`) para obtener el clima horario y el flag `is_holiday`.
 3. Hace `merge` entre el estado (a resolución de 5 min) y el clima (a resolución horaria) usando `date` + `hour`.
 4. Reindexa la serie a una frecuencia fija de 5 minutos (`asfreq` + forward-fill) para rellenar huecos temporales.
 5. Añade la columna booleana `is_imputed`, que marca `True` en las filas generadas por el relleno (frente a las filas originales reales).
 
 El resultado es un único `DataFrame`, indexado por `datetime`, con todas las features listas para el modelo.
 
-### 5.2 `scripts/main.py` — modelo LSTM multi-horizonte
+### 5.2 `backend/scripts/main.py` — modelo LSTM multi-horizonte
 
 La clase `LSTMbicis` encapsula todo el pipeline de entrenamiento y predicción:
 
@@ -279,23 +279,25 @@ Silver (MySQL: estado + informacion) ──┐
                     Predicción nbm / nbe a 5 y 10 min vista
                                         │
                                         ▼
-              (pendiente) API REST ──► Frontend Angular
+              API REST (pendiente) ──► Frontend React
 ```
 
 ### 5.5 Relación capa Gold con el resto
 
 - `gold/bikes.py` consume `estado` e `informacion` (FK) de la capa Silver, y el clima de Open-Meteo.
 - `main.py` consume el `DataFrame` de `bikes.py` y entrena/predice sin persistir nada en MySQL.
-- Exponer las predicciones vía API para que el frontend Angular las consuma es el siguiente paso pendiente.
+- Exponer las predicciones vía API para que el frontend React las consuma es el siguiente paso pendiente.
 
-### 5.6 Ejemplo de consumo desde Angular (futuro)
+### 5.6 Ejemplo de consumo desde React (futuro)
 
-```typescript
-// Servicio Angular
-getPrediction(stationId: number, horizon: number = 60): Observable<PredictionResponse> {
-  return this.http.get<PredictionResponse>(
-    `${this.apiUrl}/predictions/${stationId}?horizon=${horizon}`
+```javascript
+// Llamada a la API con fetch
+async function getPrediction(stationId, horizon = 60) {
+  const response = await fetch(
+    `${import.meta.env.VITE_API_URL}/predictions/${stationId}?horizon=${horizon}`
   );
+  if (!response.ok) throw new Error('Error al obtener la predicción');
+  return response.json();
 }
 ```
 
@@ -340,5 +342,5 @@ getPrediction(stationId: number, horizon: number = 60): Observable<PredictionRes
 - **Batching:** las inserciones se hacen en lotes (10.000 para `informacion`, 5.000 para `estado`) para evitar problemas de memoria y `max_allowed_packet`.
 - **Idempotencia:** `informacion` usa `ON DUPLICATE KEY UPDATE`; `estado` usa `INSERT IGNORE` para evitar bloqueos por duplicados.
 - **Memoria:** el script `3.insert_estado.py` lee CSV en lotes con Polars (`scan_csv().collect_batches()`) para poder procesar los ~63 archivos sin cargarlos enteros en RAM.
-- **Clima:** `scripts/silver/4.fetch_clima_bcn.py` devuelve un DataFrame con `date`, `hour`, `temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m` e `is_holiday`. El script `scripts/gold/bikes.py` une este DataFrame con la tabla `estado` de MySQL a partir de `date` y `hour` para construir el dataset de entrenamiento de la capa Gold.
-- **Credenciales:** el acceso a MySQL ya no está hardcodeado en los scripts. `scripts/silver/db_config.py` centraliza la lectura de credenciales desde variables de entorno (cargadas con `python-dotenv` desde un archivo `.env` en la raíz, no versionado). Ver `.env.example` para la plantilla de variables (`MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`).
+- **Clima:** `backend/scripts/silver/4.fetch_clima_bcn.py` devuelve un DataFrame con `date`, `hour`, `temperature_c`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m` e `is_holiday`. El script `backend/scripts/gold/bikes.py` une este DataFrame con la tabla `estado` de MySQL a partir de `date` y `hour` para construir el dataset de entrenamiento de la capa Gold.
+- **Credenciales:** el acceso a MySQL ya no está hardcodeado en los scripts. `backend/scripts/silver/db_config.py` centraliza la lectura de credenciales desde variables de entorno (cargadas con `python-dotenv` desde un archivo `.env` en la raíz, no versionado). Ver `.env.example` para la plantilla de variables (`MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`).

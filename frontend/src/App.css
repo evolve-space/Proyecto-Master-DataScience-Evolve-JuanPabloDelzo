@@ -92,3 +92,97 @@
 .leaflet-popup-content-wrapper {
   border-radius: 10px;
 }
+
+.tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: #1b2e1c;
+}
+
+.tooltip-content strong {
+  color: #c2005f;
+}
+
+.leaflet-tooltip {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.4rem 0.6rem;
+}
+
+/* Marcador tipo "pin globo" rosa para las estaciones de Bicing */
+.bike-marker {
+  position: relative;
+  width: 26px;
+  height: 38px;
+}
+
+.bike-marker-head {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, #ff7ec2, #e6007e 70%);
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bike-marker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0.9;
+}
+
+.bike-marker-stem {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 1px;
+}
+
+.bike-marker-shadow {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  filter: blur(1px);
+}
+
+/* Burbuja de clúster: agrupa estaciones cercanas al reducir el zoom */
+.bike-cluster {
+  background: transparent;
+  border: none;
+}
+
+.cluster-bubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, #ff7ec2, #c2005f 75%);
+  border: 3px solid #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: system-ui, sans-serif;
+}

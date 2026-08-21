@@ -8,3 +8,5 @@ chardet
 numpy
 scikit-learn
 tensorflow
+Flask
+Flask-Cors

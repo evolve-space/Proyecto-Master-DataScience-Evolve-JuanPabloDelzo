@@ -4,7 +4,7 @@
 ### Availability prediction for Bicing stations · Barcelona
 
 ![Barcelona](https://img.shields.io/badge/City-Barcelona-blue?style=for-the-badge&logo=mapbox)
-![Data Science](https://img.shields.io/badge/Master-Data%20Science-orange?style=for-the-badge)
+![AI Development](https://img.shields.io/badge/Master-AI%20Development-orange?style=for-the-badge)
 ![Evolve](https://img.shields.io/badge/School-Evolve-green?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-In%20development-yellow?style=for-the-badge)
 
@@ -197,8 +197,3 @@ Station information  +  Station status  +  Weather
 
 ---
 
-<div align="center">
-
-*Final project · Master's in Data Science and AI Development · Evolve*
-
-</div>

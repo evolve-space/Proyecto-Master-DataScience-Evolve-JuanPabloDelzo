@@ -1,68 +1,68 @@
 <div align="center">
 
-# 🚲 Bicing Cerca de Mí
-### Predicción de disponibilidad en estaciones Bicing · Barcelona
+# 🚲 Bicing Near Me
+### Availability prediction for Bicing stations · Barcelona
 
-![Barcelona](https://img.shields.io/badge/Ciudad-Barcelona-blue?style=for-the-badge&logo=mapbox)
+![Barcelona](https://img.shields.io/badge/City-Barcelona-blue?style=for-the-badge&logo=mapbox)
 ![Data Science](https://img.shields.io/badge/Master-Data%20Science-orange?style=for-the-badge)
-![Evolve](https://img.shields.io/badge/Escuela-Evolve-green?style=for-the-badge)
-![Estado](https://img.shields.io/badge/Estado-En%20desarrollo-yellow?style=for-the-badge)
+![Evolve](https://img.shields.io/badge/School-Evolve-green?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-In%20development-yellow?style=for-the-badge)
 
 </div>
 
 ---
 
-## 🎯 ¿Qué es este proyecto?
+## 🎯 What is this project?
 
-Una herramienta que localiza la **estación de Bicing más cercana** a un usuario en Barcelona, mostrando en tiempo real cuántas **bicicletas** puede coger y cuántos **anclajes** tiene libres para devolver una.
+A tool that locates the **nearest Bicing station** to a user in Barcelona, showing in real time how many **bikes** they can pick up and how many **docks** are free to return one.
 
-El sistema va un paso más allá: aplica **modelos de predicción de series temporales** para anticipar la disponibilidad futura en cada estación, evitando desplazamientos innecesarios.
+The system goes one step further: it applies **time series prediction models** to anticipate future availability at each station, avoiding unnecessary trips.
 
 ---
 
-## 🔍 El problema que resuelve
+## 🔍 The problem it solves
 
-> Llegas a una estación Bicing y está vacía. O intentas devolver la bici y no hay anclajes libres.
+> You arrive at a Bicing station and it's empty. Or you try to return the bike and there are no free docks.
 
-Este proyecto resuelve exactamente eso:
+This project solves exactly that:
 
-| Necesidad | Lo que hace el sistema |
+| Need | What the system does |
 |---|---|
-| 🚲 **Coger una bici** | Muestra estaciones cercanas con bicis disponibles ahora mismo |
-| 🔒 **Devolver una bici** | Muestra estaciones cercanas con anclajes libres |
-| 🔮 **Planificar** | Predice la disponibilidad futura mediante series temporales |
+| 🚲 **Pick up a bike** | Shows nearby stations with bikes available right now |
+| 🔒 **Return a bike** | Shows nearby stations with free docks |
+| 🔮 **Plan ahead** | Predicts future availability using time series |
 
 ---
 
-## ⚙️ ¿Cómo funciona?
+## ⚙️ How does it work?
 
 ```
-📍 Tu ubicación
+📍 Your location
       │
       ▼
 ┌──────────────────────────────────────────┐
-│         Estaciones cercanas              │
+│         Nearby stations                  │
 │                                          │
 │  📍 Passeig de Gràcia,178       · 120m   │
-│     🚲 Bicis: 5   🔒 Anclajes: 3        │
+│     🚲 Bikes: 5   🔒 Docks: 3           │
 │                                          │
 │  📍 Plaça Catalunya             · 340m   │
-│     🚲 Bicis: 2   🔒 Anclajes: 8        │
+│     🚲 Bikes: 2   🔒 Docks: 8           │
 │                                          │
 │  📍 Travesera de les Corts,375  · 480m   │
-│     🚲 Bicis: 0   🔒 Anclajes: 12       │
+│     🚲 Bikes: 0   🔒 Docks: 12          │
 └──────────────────────────────────────────┘
 ```
 
 ---
 
-## 📦 Datos del proyecto
+## 📦 Project data
 
-Los datos provienen del [Open Data Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) y del API de **Open-Meteo**, y se dividen en tres tipos:
+The data comes from [Open Data Ajuntament de Barcelona](https://opendata-ajuntament.barcelona.cat) and the **Open-Meteo** API, and is split into three types:
 
-### 🕐 Historial temporal — Estado de las estaciones
+### 🕐 Time history — Station status
 
-Archivos mensuales `.csv` con el estado en tiempo real de cada estación, ubicados en `data/estado/`, desde enero de **2021** hasta septiembre de **2025**.
+Monthly `.csv` files with the real-time status of each station, located in `data/estado/`, from January **2021** to September **2025**.
 
 ```
 data/
@@ -73,15 +73,15 @@ data/
     └── 2025_09_Setembre_BicingNou_ESTACIONS.csv
 ```
 
-> 📅 **63 archivos mensuales** · más de **5 años** de historial
+> 📅 **63 monthly files** · over **5 years** of history
 
-Cada registro contiene: `station_id`, `num_bikes_available`, `num_bikes_available_types.mechanical`, `num_bikes_available_types.ebike`, `num_docks_available`, `is_installed`, `is_renting`, `is_returning`, `status` y `last_reported`.
+Each record contains: `station_id`, `num_bikes_available`, `num_bikes_available_types.mechanical`, `num_bikes_available_types.ebike`, `num_docks_available`, `is_installed`, `is_renting`, `is_returning`, `status`, and `last_reported`.
 
 ---
 
-### 📍 Datos estáticos — Información de las estaciones
+### 📍 Static data — Station information
 
-Archivos `.csv` mensuales en `data/informacion/` con las características fijas (o de cambio lento) de cada estación: ubicación GPS, capacidad total, dirección y tipo de estación.
+Monthly `.csv` files in `data/informacion/` with the fixed (or slow-changing) characteristics of each station: GPS location, total capacity, address, and station type.
 
 ```
 data/
@@ -92,72 +92,72 @@ data/
     └── 2025_09_Setembre_BicingNou_INFORMACIO.csv
 ```
 
-| Campo | Descripción |
+| Field | Description |
 |---|---|
-| `station_id` | Clave de unión con el historial |
-| `lat` / `lon` | Coordenadas para calcular distancias |
-| `capacity` | Total de anclajes |
-| `address` | Nombre y dirección |
-| `physical_configuration` | Tipo de estación |
-| `is_charging_station` | Si dispone de carga para e-bikes |
+| `station_id` | Join key with the history |
+| `lat` / `lon` | Coordinates for distance calculation |
+| `capacity` | Total number of docks |
+| `address` | Name and address |
+| `physical_configuration` | Station type |
+| `is_charging_station` | Whether it has e-bike charging |
 
 ---
 
-### 🌤️ Datos meteorológicos — Open-Meteo
+### 🌤️ Weather data — Open-Meteo
 
-Datos horarios de Barcelona obtenidos de la API de **Open-Meteo** (`backend/scripts/silver/4.fetch_clima_bcn.py`).
+Hourly Barcelona data obtained from the **Open-Meteo** API (`backend/scripts/silver/4.fetch_clima_bcn.py`).
 
-- **Coordenadas:** `41.3851`, `2.1734` (Barcelona)
-- **Período:** `2021-01-01` a `2025-09-30`
+- **Coordinates:** `41.3851`, `2.1734` (Barcelona)
+- **Period:** `2021-01-01` to `2025-09-30`
 - **Variables:** `temperature_2m`, `relative_humidity_2m`, `rain`, `cloud_cover`, `wind_speed_10m`
-- **Zona horaria:** `Europe/Madrid`
+- **Time zone:** `Europe/Madrid`
 
-| Campo | Descripción |
+| Field | Description |
 |---|---|
-| `date` | Fecha del registro (`YYYY-MM-DD`) |
-| `hour` | Hora del registro (`HH`) |
-| `temperature_c` | Temperatura a 2 m (°C) |
-| `relative_humidity_2m` | Humedad relativa a 2 m (%) |
-| `rain` | Precipitación en forma de lluvia (mm) |
-| `cloud_cover` | Cobertura de nubes (%) |
-| `wind_speed_10m` | Velocidad del viento a 10 m (km/h) |
-| `is_holiday` | `True` si la fecha es festivo en Cataluña |
+| `date` | Record date (`YYYY-MM-DD`) |
+| `hour` | Record hour (`HH`) |
+| `temperature_c` | Temperature at 2 m (°C) |
+| `relative_humidity_2m` | Relative humidity at 2 m (%) |
+| `rain` | Rainfall (mm) |
+| `cloud_cover` | Cloud cover (%) |
+| `wind_speed_10m` | Wind speed at 10 m (km/h) |
+| `is_holiday` | `True` if the date is a holiday in Catalonia |
 
-### 🔗 Relación entre datasets
+### 🔗 Relationship between datasets
 
 ```
-Información de estaciones  +  Estado estaciones  +  Clima
-      (dónde y cómo es)       (cómo está ahora)   (condiciones meteorológicas)
+Station information  +  Station status  +  Weather
+   (where & what it's like)  (current state)   (weather conditions)
              │                        │                  │
              └────── station_id ──────┘                  │
                                     └────── date + hour ─┘
 ```
 
-> La clave `station_id` une las estaciones con su historial; `date` y `hour` permiten cruzar el estado de las estaciones con la información meteorológica.
+> The `station_id` key joins stations with their history; `date` and `hour` allow cross-referencing station status with weather information.
 
 ---
 
-## 📁 Estructura del repositorio
+## 📁 Repository structure
 
 ```
 📂 Proyecto-Master-DataScience-Evolve-JuanPabloDelzo/
 │
-├── 📄 README.md                      ← Estás aquí
-├── 📄 .env.example                   ← Plantilla de credenciales MySQL
-├── 📄 requirements.txt               ← Dependencias del backend
+├── 📄 README.md                       ← You are here
+├── 📄 .env.example                    ← MySQL credentials template
+├── 📄 requirements.txt                ← Backend dependencies
 │
-|── 📂 data/                          ← Datos raw (ignorado en Git)
-│   |── 📂 estado/                    ← Historial mensual de estaciones
-│   └── 📂 informacion/               ← Características de estaciones
-|
-├── 📂 docs/                          ← Entregas del máster
-│   └── 📂 entregas/ 
-│       ├── 📄 01_idea_producto.md    ← Descripción del producto
-│       ├── 📄 02_datos_necesarios.md ← Descripción de los datos
-│       ├── 📄 03_modelo_datos.md     ← Modelo de datos y capa Gold
+├── 📂 data/                           ← Raw data (ignored in Git)
+│   ├── 📂 estado/                     ← Monthly station history
+│   └── 📂 informacion/                ← Station characteristics
+│
+├── 📂 docs/                           ← Master's deliverables
+│   └── 📂 entregas/
+│       ├── 📄 01_idea_producto.md     ← Product description
+│       ├── 📄 02_datos_necesarios.md  ← Data description
+│       ├── 📄 03_modelo_datos.md      ← Data model and Gold layer
 │       └── 📄 04_analisis_modelado.md
-|
-├── 📂 frontend/                       ← Interfaz de usuario en React + Vite
+│
+├── 📂 frontend/                       ← User interface in React + Vite
 │   ├── 📄 package.json
 │   ├── 📄 pnpm-lock.yaml
 │   ├── 📄 vite.config.js
@@ -168,37 +168,37 @@ Información de estaciones  +  Estado estaciones  +  Clima
 │       ├── 📄 main.jsx
 │       └── 📂 assets/
 │
-└── 📂 backend/scripts/                        ← Scripts de carga y modelado (backend)
+└── 📂 backend/scripts/                ← Loading and modeling scripts (backend)
     │
-    ├── 📄 main.py                     ← Clase LSTMbicis: entrena y predice
+    ├── 📄 main.py                     ← LSTMbicis class: trains and predicts
     │
-    ├── 📂 silver/                     ← Carga Bronze → Silver (MySQL)
+    ├── 📂 silver/                     ← Bronze → Silver load (MySQL)
     │   ├── 1.create_db.py
     │   ├── 2.insert_informacion.py
     │   ├── 3.insert_estado.py
     │   ├── 4.fetch_clima_bcn.py
-    │   └── db_config.py               ← Credenciales MySQL vía .env
+    │   └── db_config.py               ← MySQL credentials via .env
     │
-    └── 📂 gold/                       ← Preparación de features
+    └── 📂 gold/                       ← Feature preparation
         └── bikes.py
 ```
 
-> **Frontend**: creado con `pnpm create vite@latest frontend -- --template react`.  
-> Para levantarlo: `cd frontend && pnpm install && pnpm dev`.
+> **Frontend**: created with `pnpm create vite@latest frontend -- --template react`.  
+> To run it: `cd frontend && pnpm install && pnpm dev`.
 
 ---
 
-## ✅ ¿Por qué es útil?
+## ✅ Why is it useful?
 
-- ⏱️ **Ahorra tiempo** — no caminas hasta una estación vacía
-- 😌 **Evita frustraciones** — sabes si hay anclajes antes de llegar
-- 🔮 **Es predictivo** — anticipa la disponibilidad con series temporales
-- 📊 **Basado en datos reales** — 5+ años de historial de Bicing Barcelona
+- ⏱️ **Saves time** — no walking to an empty station
+- 😌 **Avoids frustration** — you know if there are docks before you arrive
+- 🔮 **It's predictive** — anticipates availability using time series
+- 📊 **Based on real data** — 5+ years of Bicing Barcelona history
 
 ---
 
 <div align="center">
 
-*Proyecto final · Máster en Data Science y Desarrollo de IA · Evolve*
+*Final project · Master's in Data Science and AI Development · Evolve*
 
 </div>

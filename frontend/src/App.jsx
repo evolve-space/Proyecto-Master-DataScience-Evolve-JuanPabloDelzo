@@ -1,122 +1,104 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import './App.css';
+
+const BICING_API =
+  'https://api.bsmsa.eu/featureserver/OMSBicing/NOU_ESTACIONS?request=GetFeature&typeName=OMSBicing:NOU_ESTACIONS&outputFormat=application/json';
+
+const fallbackStations = [
+  { id: '1', name: 'Plaça de Catalunya', lat: 41.387015, lon: 2.170047, bikes: 12, slots: 8 },
+  { id: '2', name: 'Passeig de Gràcia', lat: 41.391055, lon: 2.165064, bikes: 5, slots: 15 },
+  { id: '3', name: 'Sagrada Família', lat: 41.403629, lon: 2.174356, bikes: 0, slots: 20 },
+  { id: '4', name: 'Camp Nou', lat: 41.380896, lon: 2.12282, bikes: 7, slots: 10 },
+  { id: '5', name: 'Barceloneta', lat: 41.380729, lon: 2.18985, bikes: 3, slots: 17 },
+  { id: '6', name: 'Arc de Triomf', lat: 41.391052, lon: 2.180644, bikes: 9, slots: 6 },
+  { id: '7', name: "Plaça d'Espanya", lat: 41.374962, lon: 2.149805, bikes: 2, slots: 18 },
+  { id: '8', name: 'Glòries', lat: 41.402235, lon: 2.188346, bikes: 6, slots: 12 },
+];
+
+const toStations = (geojson) => {
+  if (!geojson?.features) return [];
+  return geojson.features
+    .map((f) => ({
+      id: f.properties.id?.toString() || f.id,
+      name: f.properties.name || 'Estación Bicing',
+      lat: f.geometry?.coordinates?.[1],
+      lon: f.geometry?.coordinates?.[0],
+      bikes: f.properties.bikes ?? f.properties.bicis_disponibles ?? 0,
+      slots: f.properties.slots ?? f.properties.docks_disponibles ?? 0,
+    }))
+    .filter((s) => s.lat && s.lon);
+};
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [stations, setStations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(BICING_API)
+      .then((res) => res.json())
+      .then((data) => {
+        const parsed = toStations(data);
+        setStations(parsed.length ? parsed : fallbackStations);
+      })
+      .catch(() => setStations(fallbackStations))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const markerColor = (bikes) => (bikes > 0 ? '#2e7d32' : '#c62828');
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+    <div className="dashboard">
+      <header className="dashboard-header">
+        <h1>Bicing cerca de mí</h1>
+        <p>Mapa interactivo de estaciones de bicicletas públicas de Barcelona</p>
+      </header>
+      <main className="map-container">
+        {loading && <div className="loading">Cargando estaciones...</div>}
+        <MapContainer
+          center={[41.3851, 2.1734]}
+          zoom={13}
+          minZoom={11}
+          maxZoom={18}
+          scrollWheelZoom
+          className="map"
         >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          />
+          {stations.map((s) => (
+            <CircleMarker
+              key={s.id}
+              center={[s.lat, s.lon]}
+              radius={7}
+              pathOptions={{
+                fillColor: markerColor(s.bikes),
+                color: '#ffffff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.9,
+              }}
+            >
+              <Popup>
+                <div className="popup-content">
+                  <strong>{s.name}</strong>
+                  <span className={s.bikes > 0 ? 'available' : 'empty'}>
+                    Bicis: {s.bikes}
+                  </span>
+                  <span>Anclajes libres: {s.slots}</span>
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+        </MapContainer>
+      </main>
+      <footer className="dashboard-footer">
+        Datos de prueba · Barcelona · Tema verde Bicing
+      </footer>
+    </div>
+  );
 }
 
-export default App
+export default App;

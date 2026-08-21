@@ -207,7 +207,7 @@ class LSTMbicis:
         model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
-            epochs=3,
+            epochs=5,
             batch_size=64,
             callbacks=[early_stopping],
             verbose=1,

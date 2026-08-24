@@ -45,16 +45,109 @@
   z-index: 1;
 }
 
-.loading {
+.loading,
+.program-loader {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.92);
   z-index: 2;
-  font-weight: 500;
   color: #1b5e20;
+  text-align: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.program-loader {
+  background: rgba(244, 247, 246, 0.96);
+}
+
+.loader-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1b5e20;
+}
+
+.loader-detail {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: #2e7d32;
+  opacity: 0.9;
+}
+
+/* Reloj de arena animado con CSS puro */
+.hourglass {
+  position: relative;
+  width: 34px;
+  height: 56px;
+  animation: hourglass-flip 2.4s ease-in-out infinite;
+}
+
+.hourglass-top,
+.hourglass-bottom {
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 17px solid transparent;
+  border-right: 17px solid transparent;
+}
+
+.hourglass-top {
+  top: 0;
+  border-top: 28px solid #e6007e;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  animation: hourglass-top-drain 2.4s ease-in-out infinite;
+}
+
+.hourglass-bottom {
+  bottom: 0;
+  border-top: 0;
+  border-bottom: 28px solid #e6007e;
+  border-radius: 0 0 3px 3px;
+  animation: hourglass-bottom-fill 2.4s ease-in-out infinite;
+}
+
+@keyframes hourglass-flip {
+  0%, 45% {
+    transform: rotate(0deg);
+  }
+  50%, 95% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hourglass-top-drain {
+  0% {
+    border-top-width: 28px;
+  }
+  45%, 55% {
+    border-top-width: 0px;
+  }
+  100% {
+    border-top-width: 28px;
+  }
+}
+
+@keyframes hourglass-bottom-fill {
+  0% {
+    border-bottom-width: 0px;
+  }
+  45%, 55% {
+    border-bottom-width: 28px;
+  }
+  100% {
+    border-bottom-width: 0px;
+  }
 }
 
 .popup-content {
@@ -112,11 +205,14 @@
   padding: 0.4rem 0.6rem;
 }
 
-/* Marcador tipo "pin globo" rosa para las estaciones de Bicing */
+/* Marcador tipo "pin globo" rosa para las estaciones de Bicing. Se añade
+   cursor pointer a las estaciones destacadas (las 3 más cercanas) para que
+   el usuario sepa que son clicables. */
 .bike-marker {
   position: relative;
   width: 26px;
   height: 38px;
+  cursor: pointer;
 }
 
 .bike-marker-head {
@@ -184,5 +280,84 @@
   color: #ffffff;
   font-weight: 700;
   font-size: 0.85rem;
+  font-family: system-ui, sans-serif;
+}
+
+/* Marcador de la ubicación (simulada) del usuario: punto azul con halo. */
+.user-marker {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.user-marker-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1565c0;
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+
+.user-marker-halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(21, 101, 192, 0.35);
+  animation: user-marker-pulse 1.8s ease-out infinite;
+}
+
+@keyframes user-marker-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* Punto atenuado para las estaciones que no son las dos más cercanas:
+   sirven solo de contexto, sin protagonismo ni interacción. */
+.dimmed-marker {
+  pointer-events: none;
+}
+
+.dimmed-marker-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(230, 0, 126, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+/* Burbuja de clúster atenuada, para el mismo grupo de estaciones de contexto. */
+.dimmed-cluster {
+  background: transparent;
+  border: none;
+}
+
+.dimmed-cluster-bubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(194, 0, 95, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.7rem;
   font-family: system-ui, sans-serif;
 }

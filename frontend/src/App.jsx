@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import { divIcon } from 'leaflet';
@@ -8,6 +8,32 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import './App.css';
 
 const INFORMACION_API = 'http://127.0.0.1:5000/api/informacion';
+
+// Servicio público OSRM auto-hospedado por routing.openstreetmap.de con el
+// perfil peatonal ("foot") ya procesado. A diferencia del demo oficial de
+// project-osrm.org (que solo sirve el perfil "car"), este sí calcula rutas
+// y distancias reales para ir caminando por aceras y calles peatonales.
+// Nota: por cómo está desplegado el servicio, el segmento de la URL sigue
+// llamándose "driving", pero el perfil realmente usado es el peatonal.
+const FOOT_NEAREST_URL = 'https://routing.openstreetmap.de/routed-foot/nearest/v1/driving';
+const FOOT_ROUTE_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
+
+// Nominatim: se usa una única vez para obtener el polígono administrativo
+// real del municipio de Barcelona, de forma que la ubicación aleatoria del
+// usuario caiga dentro de la ciudad y no en otros municipios del área
+// metropolitana (l'Hospitalet, Badalona, etc.) que también entran dentro
+// del rectángulo (bounding box) usado como filtro rápido.
+const BARCELONA_BOUNDARY_URL =
+  'https://nominatim.openstreetmap.org/search?city=Barcelona&country=Spain&format=json&polygon_geojson=1&featureType=city&limit=1';
+
+// Nº de estaciones candidatas (por distancia en línea recta) para las que
+// se consulta la distancia real caminando. Solo necesitamos 3 finales, así
+// que 5 candidatos dan margen de sobra sin lanzar demasiadas peticiones en
+// paralelo. Se reducen para acelerar la carga inicial.
+const WALKING_CANDIDATE_COUNT = 5;
+
+// Radio medio de la Tierra en kilómetros, usado en la fórmula de Haversine.
+const EARTH_RADIUS_KM = 6371;
 
 const fallbackStations = [
   { id: '1', name: 'Plaça de Catalunya', lat: 41.387015, lon: 2.170047, capacity: 20, postCode: '08002' },
@@ -25,6 +51,27 @@ const fallbackStations = [
 // en la base de datos con lat/lon de otra ciudad), que de otro modo
 // aparecerían como marcadores sueltos fuera del mapa real.
 const BCN_BOUNDS = { minLat: 41.15, maxLat: 41.55, minLon: 1.9, maxLon: 2.35 };
+
+// Término municipal de Barcelona: rectángulo que contiene todo el
+// municipio real, incluyendo sus "rincones" (Tibidabo, Zona Franca,
+// Besòs, Barceloneta, Horta...). Se usa para muestrear la ubicación
+// aleatoria del usuario, y luego el polígono real de Nominatim y el
+// control de snap a calle descartan agua, montaña sin aceras, etc.
+const BCN_CITY_BOUNDS = { minLat: 41.32, maxLat: 41.47, minLon: 2.05, maxLon: 2.23 };
+
+// Zona urbana central segura, usada únicamente como fallback si todo lo
+// demás falla. Garantiza que, incluso sin servicios externos, la
+// ubicación del usuario caiga en una calle real de Barcelona.
+const SAFE_URBAN_BOUNDS = { minLat: 41.36, maxLat: 41.415, minLon: 2.12, maxLon: 2.205 };
+
+// Si OSRM nearest devuelve una calle a más de esta distancia (en metros),
+// se considera que el punto cae en una zona no accesible (agua, patio
+// cerrado, gran parque...) y se reintenta con otro punto aleatorio.
+const MAX_SNAP_DISTANCE_METERS = 180;
+
+// Da formato legible a una distancia en kilómetros: en metros si es corta,
+// o en km con dos decimales si es más larga.
+const formatDistance = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(2)} km`);
 
 // Convierte el objeto { "<station_id>": { address, capacity, latitud, longitud, post_code } }
 // devuelto por la API en un array de estaciones fácil de renderizar en el mapa.
@@ -50,6 +97,187 @@ const toStations = (data) => {
     );
 };
 
+const toRad = (deg) => (deg * Math.PI) / 180;
+
+// Distancia en línea recta entre dos puntos geográficos (en km) según la
+// fórmula de Haversine, que asume la Tierra como una esfera:
+//   d = 2R · arcsin( sqrt( sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlon/2) ) )
+// Se usa solo como preselección rápida (sin llamadas de red) para acotar
+// las estaciones candidatas antes de pedir la distancia real caminando;
+// la distancia final que se muestra y con la que se decide cuáles son las
+// "3 más cercanas" es la distancia peatonal real (ver fetchWalkingDistanceKm).
+const haversineDistanceKm = (lat1, lon1, lat2, lon2) => {
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(a));
+};
+
+// Caché del polígono de Barcelona: en memoria + localStorage para evitar
+// descargarlo de Nominatim en cada recarga de la app.
+let barcelonaPolygonCache = null;
+const POLYGON_CACHE_KEY = 'bicing-barcelona-polygon';
+const POLYGON_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+
+const getCachedBarcelonaPolygon = () => {
+  if (barcelonaPolygonCache) return barcelonaPolygonCache;
+  try {
+    const stored = localStorage.getItem(POLYGON_CACHE_KEY);
+    if (!stored) return null;
+    const { geojson, timestamp } = JSON.parse(stored);
+    if (!geojson || Date.now() - timestamp > POLYGON_CACHE_TTL_MS) {
+      localStorage.removeItem(POLYGON_CACHE_KEY);
+      return null;
+    }
+    barcelonaPolygonCache = geojson;
+    return geojson;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedBarcelonaPolygon = (geojson) => {
+  barcelonaPolygonCache = geojson;
+  try {
+    localStorage.setItem(POLYGON_CACHE_KEY, JSON.stringify({ geojson, timestamp: Date.now() }));
+  } catch {
+    // localStorage puede estar bloqueado: se ignora.
+  }
+};
+
+// Descarga el límite administrativo de Barcelona como GeoJSON. Si Nominatim
+// no responde rápido, se devuelve `null` y el resto del flujo usa el
+// rectángulo BCN_CITY_BOUNDS + el control de snap a calle.
+const fetchBarcelonaPolygon = async () => {
+  const cached = getCachedBarcelonaPolygon();
+  if (cached) return cached;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(BARCELONA_BOUNDARY_URL, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const geojson = data?.[0]?.geojson;
+    if (!geojson || (geojson.type !== 'Polygon' && geojson.type !== 'MultiPolygon')) return null;
+    setCachedBarcelonaPolygon(geojson);
+    return geojson;
+  } catch {
+    return null;
+  }
+};
+
+// Comprueba si un punto está dentro de un anillo (ring) de coordenadas
+// [lon, lat] mediante el algoritmo de "ray casting".
+const isPointInRing = (lat, lon, ring) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const intersects = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
+// Comprueba si un punto cae dentro del polígono (o multipolígono) de
+// Barcelona. Solo se evalúa el anillo exterior de cada polígono (se
+// ignoran agujeros/enclaves), suficiente para descartar puntos fuera del
+// término municipal.
+const isPointInBarcelona = (lat, lon, geojson) => {
+  if (!geojson) return true; // sin polígono disponible: no se descarta el punto
+  const polygons = geojson.type === 'MultiPolygon' ? geojson.coordinates : [geojson.coordinates];
+  return polygons.some(([outerRing]) => isPointInRing(lat, lon, outerRing));
+};
+
+// Punto aleatorio dentro de todo el término municipal de Barcelona, para
+// que el usuario pueda aparecer en cualquier rincón de la ciudad.
+const randomUserPoint = () => ({
+  lat: BCN_CITY_BOUNDS.minLat + Math.random() * (BCN_CITY_BOUNDS.maxLat - BCN_CITY_BOUNDS.minLat),
+  lon: BCN_CITY_BOUNDS.minLon + Math.random() * (BCN_CITY_BOUNDS.maxLon - BCN_CITY_BOUNDS.minLon),
+});
+
+// Punto aleatorio dentro de una zona urbana segura del centro, usado solo
+// como fallback si los servicios externos no responden.
+const randomFallbackPoint = () => ({
+  lat: SAFE_URBAN_BOUNDS.minLat + Math.random() * (SAFE_URBAN_BOUNDS.maxLat - SAFE_URBAN_BOUNDS.minLat),
+  lon: SAFE_URBAN_BOUNDS.minLon + Math.random() * (SAFE_URBAN_BOUNDS.maxLon - SAFE_URBAN_BOUNDS.minLon),
+  snapped: false,
+});
+
+// Genera un punto aleatorio dentro del centro urbano de Barcelona y lo
+// ajusta (snap) a la calle/acera peatonal más cercana usando el servicio
+// OSRM "nearest" con perfil peatonal. Se comprueba que:
+//   1. el punto esté dentro del polígono municipal real de Barcelona;
+//   2. OSRM encuentre una calle a una distancia razonable (no mar/agua);
+//   3. el punto ajustado siga dentro del polígono y del área urbana densa.
+// Si algún paso falla, se reintenta unos pocos intentos; al final se
+// devuelve un punto seguro de respaldo para no bloquear la aplicación.
+const generateUserLocationOnStreet = async (attempts = 6) => {
+  const barcelonaPolygon = await fetchBarcelonaPolygon();
+
+  for (let i = 0; i < attempts; i += 1) {
+    const { lat, lon } = randomUserPoint();
+    if (!isPointInBarcelona(lat, lon, barcelonaPolygon)) continue;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${FOOT_NEAREST_URL}/${lon},${lat}?number=1`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const waypoint = data?.waypoints?.[0];
+      const snapped = waypoint?.location;
+      const snapDistance = waypoint?.distance;
+
+      if (data.code !== 'Ok' || !Array.isArray(snapped)) continue;
+      // Si la calle más cercana está lejos (>150 m), probablemente caemos
+      // en agua, un gran parque sin aceras o un patio cerrado: se descarta.
+      if (typeof snapDistance === 'number' && snapDistance > MAX_SNAP_DISTANCE_METERS) continue;
+
+      const [snappedLon, snappedLat] = snapped;
+      // Cerca del límite municipal, el punto ajustado a la calle más
+      // cercana podría caer en un municipio vecino: se descarta y se
+      // reintenta en ese caso.
+      if (isPointInBarcelona(snappedLat, snappedLon, barcelonaPolygon)) {
+        return { lat: snappedLat, lon: snappedLon, snapped: true };
+      }
+    } catch {
+      // Se ignora y se reintenta con otro punto aleatorio.
+    }
+  }
+  // Último recurso: un punto aleatorio dentro de una zona urbana segura del
+  // centro, para no quedarnos sin ubicación ni caer siempre en el mismo sitio.
+  return randomFallbackPoint();
+};
+
+// Distancia real caminando (en km) entre dos puntos, calculada con el
+// servicio de rutas peatonales de OSRM. Devuelve `null` si el servicio no
+// responde, para que quien llame pueda recurrir a un valor aproximado.
+const fetchWalkingDistanceKm = async (from, to) => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${FOOT_ROUTE_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const meters = data?.routes?.[0]?.distance;
+    return typeof meters === 'number' ? meters / 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
 // Icono tipo "pin globo" rosa, similar a un marcador de estación de bicis.
 const bikeStationIcon = divIcon({
   className: 'bike-marker',
@@ -65,15 +293,39 @@ const bikeStationIcon = divIcon({
   popupAnchor: [0, -34],
 });
 
+// Icono para la ubicación (simulada) del usuario: un punto azul con halo,
+// siguiendo la convención habitual de "mi ubicación" en mapas.
+const userLocationIcon = divIcon({
+  className: 'user-marker',
+  html: `
+    <div class="user-marker-halo"></div>
+    <div class="user-marker-dot"></div>
+  `,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+// Icono atenuado (pequeño punto gris/rosa translúcido) para las estaciones
+// que no están entre las dos más cercanas al usuario. Sirve solo de
+// contexto visual, sin protagonismo ni interacción.
+const dimmedStationIcon = divIcon({
+  className: 'dimmed-marker',
+  html: `<div class="dimmed-marker-dot"></div>`,
+  iconSize: [10, 10],
+  iconAnchor: [5, 5],
+});
+
 // Icono de "clúster" (grupo de estaciones cercanas) a bajo zoom, con el
-// mismo tema rosa/verde Bicing. El tamaño crece ligeramente con el nº de
-// estaciones agrupadas para dar una pista visual de densidad.
-const createClusterIcon = (cluster) => {
+// mismo tema rosa/verde Bicing, pero atenuado: agrupa el resto de
+// estaciones que no son las dos más cercanas al usuario, mostradas solo
+// como contexto. El tamaño crece ligeramente con el nº de estaciones
+// agrupadas para dar una pista visual de densidad.
+const createDimmedClusterIcon = (cluster) => {
   const count = cluster.getChildCount();
-  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+  const size = count < 10 ? 26 : count < 50 ? 32 : 38;
   return divIcon({
-    html: `<div class="cluster-bubble" style="width:${size}px;height:${size}px;">${count}</div>`,
-    className: 'bike-cluster',
+    html: `<div class="dimmed-cluster-bubble" style="width:${size}px;height:${size}px;">${count}</div>`,
+    className: 'dimmed-cluster',
     iconSize: [size, size],
   });
 };
@@ -108,9 +360,29 @@ function MapResizeHandler() {
   return null;
 }
 
+// Centra y hace zoom suave sobre una posición cuando esta cambia (se usa
+// para llevar el mapa hasta la ubicación aleatoria del usuario en cuanto
+// se calcula, sin esperar a que el usuario navegue manualmente).
+function FlyToLocation({ position, zoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, zoom, { duration: 1.2 });
+    }
+  }, [position, zoom, map]);
+
+  return null;
+}
+
 function App() {
   const [stations, setStations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingStations, setLoadingStations] = useState(true);
+  const [userLocation, setUserLocation] = useState(null);
+  const [loadingLocation, setLoadingLocation] = useState(true);
+  const [nearestStations, setNearestStations] = useState([]);
+  const [computingNearest, setComputingNearest] = useState(false);
+  const locationInitStarted = useRef(false);
 
   useEffect(() => {
     fetch(INFORMACION_API)
@@ -120,17 +392,114 @@ function App() {
         setStations(parsed.length ? parsed : fallbackStations);
       })
       .catch(() => setStations(fallbackStations))
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingStations(false));
+
+    // Ubicación aleatoria del usuario, generada una única vez al cargar la
+    // aplicación, dentro de Barcelona ciudad y ajustada a la calle/acera
+    // peatonal más cercana. El flag locationInitStarted evita que React
+    // Strict Mode / HMR generen la ubicación varias veces en desarrollo.
+    if (locationInitStarted.current) return undefined;
+    locationInitStarted.current = true;
+
+    const locationTimeout = setTimeout(() => {
+      setUserLocation(randomFallbackPoint());
+      setLoadingLocation(false);
+    }, 8000);
+
+    generateUserLocationOnStreet()
+      .then((location) => {
+        clearTimeout(locationTimeout);
+        setUserLocation(location);
+      })
+      .catch(() => {
+        clearTimeout(locationTimeout);
+        setUserLocation(randomFallbackPoint());
+      })
+      .finally(() => {
+        setLoadingLocation(false);
+      });
+
+    return () => clearTimeout(locationTimeout);
   }, []);
+
+  // Una vez hay estaciones y ubicación de usuario: preselecciona las
+  // estaciones candidatas por distancia en línea recta (Haversine) y pide
+  // al servicio de rutas peatonales la distancia real caminando a cada
+  // una, para quedarse con las 3 más cercanas según esa distancia real
+  // (no la euclidiana).
+  useEffect(() => {
+    if (!userLocation || stations.length === 0) return undefined;
+
+    let cancelled = false;
+    setComputingNearest(true);
+
+    const run = async () => {
+      const candidates = stations
+        .map((s) => ({
+          ...s,
+          straightLineKm: haversineDistanceKm(userLocation.lat, userLocation.lon, s.lat, s.lon),
+        }))
+        .sort((a, b) => a.straightLineKm - b.straightLineKm)
+        .slice(0, WALKING_CANDIDATE_COUNT);
+
+      const withWalkingDistance = await Promise.all(
+        candidates.map(async (s) => {
+          const walkingKm = await fetchWalkingDistanceKm(userLocation, { lat: s.lat, lon: s.lon });
+          return {
+            ...s,
+            distanceKm: walkingKm ?? s.straightLineKm,
+            isWalkingDistance: walkingKm != null,
+          };
+        }),
+      );
+
+      withWalkingDistance.sort((a, b) => a.distanceKm - b.distanceKm);
+
+      if (!cancelled) {
+        setNearestStations(withWalkingDistance.slice(0, 3));
+        setComputingNearest(false);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stations, userLocation]);
+
+  // El resto de estaciones (todas menos las 3 más cercanas) se muestran
+  // solo como contexto visual, atenuadas.
+  const otherStations = useMemo(() => {
+    const nearestIds = new Set(nearestStations.map((s) => s.id));
+    return stations.filter((s) => !nearestIds.has(s.id));
+  }, [stations, nearestStations]);
+
+  const loading = loadingStations || loadingLocation || computingNearest;
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>Bicing cerca de mí</h1>
-        <p>Mapa interactivo de estaciones de bicicletas públicas de Barcelona</p>
+        <p>Ubicación simulada del usuario y sus tres estaciones de Bicing más cercanas a pie</p>
       </header>
       <main className="map-container">
-        {loading && <div className="loading">Cargando estaciones...</div>}
+        {loading && (
+          <div className="program-loader">
+            <div className="hourglass" aria-label="Reloj de arena animado">
+              <div className="hourglass-top"></div>
+              <div className="hourglass-bottom"></div>
+            </div>
+            <p className="loader-title">Abriendo el programa…</p>
+            <p className="loader-detail">
+              {loadingLocation
+                ? 'Localizando tu posición en la calle…'
+                : computingNearest
+                  ? 'Calculando distancias a pie…'
+                  : 'Cargando estaciones…'}
+            </p>
+          </div>
+        )}
         <MapContainer
           center={[41.3851, 2.1734]}
           zoom={13}
@@ -149,36 +518,77 @@ function App() {
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
           <MapResizeHandler />
+
+          {userLocation && <FlyToLocation position={[userLocation.lat, userLocation.lon]} zoom={15} />}
+
+          {/* Resto de estaciones: solo como contexto visual, atenuadas y agrupadas. */}
           <MarkerClusterGroup
-            iconCreateFunction={createClusterIcon}
-            maxClusterRadius={60}
-            spiderfyOnMaxZoom
+            iconCreateFunction={createDimmedClusterIcon}
+            maxClusterRadius={70}
+            spiderfyOnMaxZoom={false}
             showCoverageOnHover={false}
           >
-            {stations.map((s) => (
-              <Marker key={s.id} position={[s.lat, s.lon]} icon={bikeStationIcon}>
-                <Tooltip direction="top" offset={[0, -30]} opacity={1}>
-                  <div className="tooltip-content">
-                    <span>
-                      <strong>Dirección:</strong> {s.name}
-                    </span>
-                    {s.postCode && (
-                      <span>
-                        <strong>Código postal:</strong> {s.postCode}
-                      </span>
-                    )}
-                  </div>
-                </Tooltip>
-                <Popup>
-                  <div className="popup-content">
-                    <strong>{s.name}</strong>
-                    <span>Capacidad: {s.capacity} anclajes</span>
-                    {s.postCode && <span>CP: {s.postCode}</span>}
-                  </div>
-                </Popup>
-              </Marker>
+            {otherStations.map((s) => (
+              <Marker key={s.id} position={[s.lat, s.lon]} icon={dimmedStationIcon} interactive={false} />
             ))}
           </MarkerClusterGroup>
+
+          {/* Las tres estaciones más cercanas al usuario, destacadas como antes.
+              Al hacer click sobre una de ellas se imprime su ID en la consola. */}
+          {nearestStations.map((s, index) => (
+            <Marker
+              key={s.id}
+              position={[s.lat, s.lon]}
+              icon={bikeStationIcon}
+              eventHandlers={{
+                click: () => {
+                  console.log('Estación seleccionada:', s.id);
+                },
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -30]} opacity={1}>
+                <div className="tooltip-content">
+                  <span>
+                    <strong>Dirección:</strong> {s.name}
+                  </span>
+                  {s.postCode && (
+                    <span>
+                      <strong>Código postal:</strong> {s.postCode}
+                    </span>
+                  )}
+                  <span>
+                    <strong>A pie:</strong> {formatDistance(s.distanceKm)}
+                    {!s.isWalkingDistance && ' (aprox.)'}
+                  </span>
+                </div>
+              </Tooltip>
+              <Popup>
+                <div className="popup-content">
+                  <strong>
+                    {index === 0 ? '1ª más cercana' : index === 1 ? '2ª más cercana' : '3ª más cercana'} · {s.name}
+                  </strong>
+                  <span>Capacidad: {s.capacity} anclajes</span>
+                  {s.postCode && <span>CP: {s.postCode}</span>}
+                  <span>
+                    Distancia caminando: {formatDistance(s.distanceKm)}
+                    {!s.isWalkingDistance && ' (línea recta, ruta no disponible)'}
+                  </span>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
+          {/* Ubicación (simulada) del usuario, siempre sobre una calle. */}
+          {userLocation && (
+            <Marker position={[userLocation.lat, userLocation.lon]} icon={userLocationIcon}>
+              <Popup>
+                <div className="popup-content">
+                  <strong>Tu ubicación</strong>
+                  <span>{userLocation.snapped ? 'Ajustada a la calle más cercana' : 'Posición aproximada'}</span>
+                </div>
+              </Popup>
+            </Marker>
+          )}
         </MapContainer>
       </main>
       <footer className="dashboard-footer">

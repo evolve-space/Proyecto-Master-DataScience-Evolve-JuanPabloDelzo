@@ -55,6 +55,8 @@ class LSTMbicis:
         self.model = None
         self.scaler_x = None
         self.scaler_y = None
+        self.predictions = None
+        self.last_timestamp = None
 
     @staticmethod
     def _import_bicis():
@@ -207,7 +209,7 @@ class LSTMbicis:
         model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),
-            epochs=5,
+            epochs=2,
             batch_size=64,
             callbacks=[early_stopping],
             verbose=1,
@@ -230,10 +232,22 @@ class LSTMbicis:
         pred_matrix = scaler_y.inverse_transform(pred_matrix_scaled)
 
         ultimo_timestamp = df.index[-1]
+        self.last_timestamp = ultimo_timestamp.isoformat()
+        self.predictions = []
         print(f"\nÚltimo timestamp disponible: {ultimo_timestamp}")
         for h_min, fila in zip(self.horizontes_min, pred_matrix):
             pred_dt = ultimo_timestamp + pd.Timedelta(minutes=h_min)
             mech_pred, ebike_pred = np.maximum(fila, 0)
+            mech_pred = float(mech_pred)
+            ebike_pred = float(ebike_pred)
+            self.predictions.append(
+                {
+                    "horizon_minutes": int(h_min),
+                    "timestamp": pred_dt.isoformat(),
+                    "nbm": mech_pred,
+                    "nbe": ebike_pred,
+                }
+            )
             print(
                 f"+{h_min} min ({pred_dt}): "
                 f"nbm≈{mech_pred:.2f} | nbe≈{ebike_pred:.2f}"
@@ -243,5 +257,5 @@ class LSTMbicis:
 
 
 if __name__ == "__main__":
-    modelo = LSTMbicis(station_id=33)
+    modelo = LSTMbicis(station_id=34)
     modelo.entrenar_y_predecir()

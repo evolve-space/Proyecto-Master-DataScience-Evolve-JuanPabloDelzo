@@ -8,6 +8,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import './App.css';
 
 const INFORMACION_API = 'http://127.0.0.1:5000/api/informacion';
+const PREDICCION_API = 'http://127.0.0.1:5000/api/predict';
 
 // Servicio público OSRM auto-hospedado por routing.openstreetmap.de con el
 // perfil peatonal ("foot") ya procesado. A diferencia del demo oficial de
@@ -382,6 +383,9 @@ function App() {
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [nearestStations, setNearestStations] = useState([]);
   const [computingNearest, setComputingNearest] = useState(false);
+  const [predictions, setPredictions] = useState({});
+  const [predictionLoading, setPredictionLoading] = useState({});
+  const [predictionError, setPredictionError] = useState({});
   const locationInitStarted = useRef(false);
 
   useEffect(() => {
@@ -468,6 +472,40 @@ function App() {
     };
   }, [stations, userLocation]);
 
+  // Al hacer clic en una estación, llama a la API de predicción LSTM y
+  // guarda el resultado para esa station_id. El entrenamiento tarda ~1-2
+  // minutos, así que mostramos un estado de carga mientras tanto.
+  const fetchPrediction = async (stationId) => {
+    if (predictionLoading[stationId]) return;
+
+    setPredictionLoading((prev) => ({ ...prev, [stationId]: true }));
+    setPredictionError((prev) => ({ ...prev, [stationId]: null }));
+
+    try {
+      const res = await fetch(PREDICCION_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ station_id: Number(stationId) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setPredictions((prev) => ({ ...prev, [stationId]: data }));
+    } catch (err) {
+      // Detectamos específicamente cuando la API no responde (refused,
+      // timeout, etc.) para dar un mensión más útil al usuario.
+      const isConnectionError =
+        err.message?.includes('Failed to fetch') ||
+        err.message?.includes('NetworkError') ||
+        err.message?.includes('connection refused');
+      const friendlyMessage = isConnectionError
+        ? 'No se pudo conectar con la API. Asegúrate de ejecutar: python backend/api/informacion_api.py'
+        : err.message;
+      setPredictionError((prev) => ({ ...prev, [stationId]: friendlyMessage }));
+    } finally {
+      setPredictionLoading((prev) => ({ ...prev, [stationId]: false }));
+    }
+  };
+
   // El resto de estaciones (todas menos las 3 más cercanas) se muestran
   // solo como contexto visual, atenuadas.
   const otherStations = useMemo(() => {
@@ -481,7 +519,7 @@ function App() {
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>Bicing cerca de mí</h1>
-        <p>Ubicación simulada del usuario y sus tres estaciones de Bicing más cercanas a pie</p>
+        <p>Ubicación del usuario y de las tres estaciones más cercanas a pie</p>
       </header>
       <main className="map-container">
         {loading && (
@@ -514,8 +552,9 @@ function App() {
           className="map"
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
           />
           <MapResizeHandler />
 
@@ -534,49 +573,105 @@ function App() {
           </MarkerClusterGroup>
 
           {/* Las tres estaciones más cercanas al usuario, destacadas como antes.
-              Al hacer click sobre una de ellas se imprime su ID en la consola. */}
-          {nearestStations.map((s, index) => (
-            <Marker
-              key={s.id}
-              position={[s.lat, s.lon]}
-              icon={bikeStationIcon}
-              eventHandlers={{
-                click: () => {
-                  console.log('Estación seleccionada:', s.id);
-                },
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -30]} opacity={1}>
-                <div className="tooltip-content">
-                  <span>
-                    <strong>Dirección:</strong> {s.name}
-                  </span>
-                  {s.postCode && (
+              Al hacer click sobre una de ellas se pide la predicción LSTM y
+              se muestra junto a la información de la estación. */}
+          {nearestStations.map((s, index) => {
+            const pred = predictions[s.id];
+            const isLoading = predictionLoading[s.id];
+            const hasError = predictionError[s.id];
+
+            const pred5 = pred?.predictions?.find((p) => p.horizon_minutes === 5);
+            const pred10 = pred?.predictions?.find((p) => p.horizon_minutes === 10);
+            const nbm5 = Math.round(pred5?.nbm ?? 0);
+            const nbe5 = Math.round(pred5?.nbe ?? 0);
+            const nbm10 = Math.round(pred10?.nbm ?? 0);
+            const nbe10 = Math.round(pred10?.nbe ?? 0);
+            const capacity = s.capacity ?? 0;
+            const docks5 = Math.max(0, capacity - nbm5 - nbe5);
+            const docks10 = Math.max(0, capacity - nbm10 - nbe10);
+
+            return (
+              <Marker
+                key={s.id}
+                position={[s.lat, s.lon]}
+                icon={bikeStationIcon}
+                eventHandlers={{
+                  click: () => {
+                    console.log('Estación seleccionada:', s.id);
+                    fetchPrediction(s.id);
+                  },
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -30]} opacity={1}>
+                  <div className="tooltip-content">
                     <span>
-                      <strong>Código postal:</strong> {s.postCode}
+                      <strong>Dirección:</strong> {s.name}
                     </span>
-                  )}
-                  <span>
-                    <strong>A pie:</strong> {formatDistance(s.distanceKm)}
-                    {!s.isWalkingDistance && ' (aprox.)'}
-                  </span>
-                </div>
-              </Tooltip>
-              <Popup>
-                <div className="popup-content">
-                  <strong>
-                    {index === 0 ? '1ª más cercana' : index === 1 ? '2ª más cercana' : '3ª más cercana'} · {s.name}
-                  </strong>
-                  <span>Capacidad: {s.capacity} anclajes</span>
-                  {s.postCode && <span>CP: {s.postCode}</span>}
-                  <span>
-                    Distancia caminando: {formatDistance(s.distanceKm)}
-                    {!s.isWalkingDistance && ' (línea recta, ruta no disponible)'}
-                  </span>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                    {s.postCode && (
+                      <span>
+                        <strong>Código postal:</strong> {s.postCode}
+                      </span>
+                    )}
+                    <span>
+                      <strong>A pie:</strong> {formatDistance(s.distanceKm)}
+                      {!s.isWalkingDistance && ' (aprox.)'}
+                    </span>
+                  </div>
+                </Tooltip>
+                <Popup>
+                  <div className="popup-content">
+                    <strong>
+                      {index === 0 ? '1ª más cercana' : index === 1 ? '2ª más cercana' : '3ª más cercana'} · {s.name}
+                    </strong>
+                    <span>Capacidad: {s.capacity} anclajes</span>
+                    {s.postCode && <span>Código Postal: {s.postCode}</span>}
+                    <span>
+                      Distancia caminando: {formatDistance(s.distanceKm)}
+                      {!s.isWalkingDistance && ' (línea recta, ruta no disponible)'}
+                    </span>
+
+                    <div className="prediction-section">
+                      <strong>Predicción</strong>
+                      {isLoading ? (
+                        <span className="prediction-loading">Calculando… (puede tardar ~1-2 min)</span>
+                      ) : hasError ? (
+                        <span className="prediction-error">Error: {hasError}</span>
+                      ) : pred ? (
+                        <table className="prediction-table">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              <th>+ 5 min</th>
+                              <th>+ 10 min</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>Mecánicas</td>
+                              <td>{nbm5}</td>
+                              <td>{nbm10}</td>
+                            </tr>
+                            <tr>
+                              <td>Eléctricas</td>
+                              <td>{nbe5}</td>
+                              <td>{nbe10}</td>
+                            </tr>
+                            <tr>
+                              <td>Docks</td>
+                              <td>{docks5}</td>
+                              <td>{docks10}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      ) : (
+                        <span className="prediction-hint">Haz clic en el marcador para predecir</span>
+                      )}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
 
           {/* Ubicación (simulada) del usuario, siempre sobre una calle. */}
           {userLocation && (

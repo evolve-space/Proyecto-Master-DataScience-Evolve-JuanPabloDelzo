@@ -173,6 +173,68 @@
   font-weight: 600;
 }
 
+.prediction-section {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(27, 94, 32, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.prediction-section > strong {
+  color: #c2005f;
+  font-size: 0.95rem;
+}
+
+.prediction-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.prediction-table th,
+.prediction-table td {
+  padding: 0.25rem 0.4rem;
+  text-align: center;
+  border: 1px solid rgba(27, 94, 32, 0.25);
+}
+
+.prediction-table th {
+  background: rgba(27, 94, 32, 0.08);
+  color: #1b5e20;
+  font-weight: 600;
+}
+
+.prediction-table td:first-child {
+  text-align: left;
+  font-weight: 500;
+  color: #1b2e1c;
+}
+
+.prediction-loading,
+.prediction-hint,
+.prediction-error {
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.prediction-loading {
+  color: #1b5e20;
+  font-style: italic;
+}
+
+.prediction-hint {
+  color: #777;
+}
+
+.prediction-error {
+  color: #c62828;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
 .dashboard-footer {
   flex: 0 0 auto;
   background: #1b5e20;

@@ -39,8 +39,8 @@ COLUMNS = ["station_id", "latitud", "longitud", "address", "post_code", "capacit
 @app.route("/api/informacion", methods=["GET"])
 def obtener_informacion():
     """Devuelve, en formato JSON, las columnas seleccionadas de la tabla `informacion`."""
-    query = f"SELECT {', '.join(COLUMNS)} FROM informacion"
-
+    query = f"SELECT {', '.join(COLUMNS)} FROM informacion WHERE station_id <> 588"
+    # Descubrí que aquella estación no registra datos
     conn = mysql.connector.connect(**get_connection_params(DB_NAME))
     try:
         cursor = conn.cursor(dictionary=True)

@@ -31,7 +31,7 @@ const BARCELONA_BOUNDARY_URL =
 // se consulta la distancia real caminando. Solo necesitamos 3 finales, así
 // que 5 candidatos dan margen de sobra sin lanzar demasiadas peticiones en
 // paralelo. Se reducen para acelerar la carga inicial.
-const WALKING_CANDIDATE_COUNT = 5;
+const WALKING_CANDIDATE_COUNT = 3;
 
 // Radio medio de la Tierra en kilómetros, usado en la fórmula de Haversine.
 const EARTH_RADIUS_KM = 6371;
@@ -262,21 +262,31 @@ const generateUserLocationOnStreet = async (attempts = 6) => {
 // Distancia real caminando (en km) entre dos puntos, calculada con el
 // servicio de rutas peatonales de OSRM. Devuelve `null` si el servicio no
 // responde, para que quien llame pueda recurrir a un valor aproximado.
-const fetchWalkingDistanceKm = async (from, to) => {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`${FOOT_ROUTE_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const meters = data?.routes?.[0]?.distance;
-    return typeof meters === 'number' ? meters / 1000 : null;
-  } catch {
-    return null;
+const fetchWalkingDistanceKm = async (from, to, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    let timeout;
+    try {
+      const controller = new AbortController();
+      timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${FOOT_ROUTE_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`, {
+        signal: controller.signal,
+      });
+      if (res.status === 429 && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) return null;
+      const data = await res.json();
+      const meters = data?.routes?.[0]?.distance;
+      return typeof meters === 'number' ? meters / 1000 : null;
+    } catch {
+      if (attempt < retries) continue;
+      return null;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
+  return null;
 };
 
 // Icono tipo "pin globo" rosa, similar a un marcador de estación de bicis.
@@ -446,16 +456,19 @@ function App() {
         .sort((a, b) => a.straightLineKm - b.straightLineKm)
         .slice(0, WALKING_CANDIDATE_COUNT);
 
-      const withWalkingDistance = await Promise.all(
-        candidates.map(async (s) => {
-          const walkingKm = await fetchWalkingDistanceKm(userLocation, { lat: s.lat, lon: s.lon });
-          return {
-            ...s,
-            distanceKm: walkingKm ?? s.straightLineKm,
-            isWalkingDistance: walkingKm != null,
-          };
-        }),
-      );
+      const withWalkingDistance = [];
+      for (let i = 0; i < candidates.length; i += 1) {
+        const s = candidates[i];
+        const walkingKm = await fetchWalkingDistanceKm(userLocation, { lat: s.lat, lon: s.lon });
+        withWalkingDistance.push({
+          ...s,
+          distanceKm: walkingKm ?? s.straightLineKm,
+          isWalkingDistance: walkingKm != null,
+        });
+        if (i < candidates.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+      }
 
       withWalkingDistance.sort((a, b) => a.distanceKm - b.distanceKm);
 
@@ -489,6 +502,18 @@ function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error desconocido');
+
+      // Log de seguridad en consola con los valores no redondeados
+      // recibidos desde bicis_pred_api.py (antes de mostrarlos redondeados).
+      console.group('Predicción recibida (valores raw) - estación', stationId);
+      data.predictions?.forEach((p) => {
+        console.log(
+          `+${p.horizon_minutes} min → mecánicas: ${p.nbm}, eléctricas: ${p.nbe}`,
+        );
+      });
+      console.log('Último timestamp disponible:', data.last_timestamp);
+      console.groupEnd();
+
       setPredictions((prev) => ({ ...prev, [stationId]: data }));
     } catch (err) {
       // Detectamos específicamente cuando la API no responde (refused,
@@ -519,7 +544,7 @@ function App() {
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>Bicing cerca de mí</h1>
-        <p>Ubicación del usuario y de las tres estaciones más cercanas a pie</p>
+        <p>Ubicación del usuario y las tres estaciones más cercanas</p>
       </header>
       <main className="map-container">
         {loading && (
@@ -597,7 +622,7 @@ function App() {
                 icon={bikeStationIcon}
                 eventHandlers={{
                   click: () => {
-                    console.log('Estación seleccionada:', s.id);
+                    console.log('%cEstación seleccionada:', 'color: orange; font-weight: bold;',s.id);
                     fetchPrediction(s.id);
                   },
                 }}
@@ -613,8 +638,9 @@ function App() {
                       </span>
                     )}
                     <span>
-                      <strong>A pie:</strong> {formatDistance(s.distanceKm)}
-                      {!s.isWalkingDistance && ' (aprox.)'}
+                      <strong>{s.isWalkingDistance ? 'A pie:' : 'Distancia aprox.:'}</strong>{' '}
+                      {formatDistance(s.distanceKm)}
+                      {!s.isWalkingDistance && ' (línea recta)'}
                     </span>
                   </div>
                 </Tooltip>
@@ -626,14 +652,21 @@ function App() {
                     <span>Capacidad: {s.capacity} anclajes</span>
                     {s.postCode && <span>Código Postal: {s.postCode}</span>}
                     <span>
-                      Distancia caminando: {formatDistance(s.distanceKm)}
-                      {!s.isWalkingDistance && ' (línea recta, ruta no disponible)'}
+                      {s.isWalkingDistance ? 'Distancia caminando: ' : 'Distancia aprox. (línea recta): '}
+                      {formatDistance(s.distanceKm)}
                     </span>
 
                     <div className="prediction-section">
-                      <strong>Predicción</strong>
+                      {!isLoading && <strong>Predicción</strong>}
                       {isLoading ? (
-                        <span className="prediction-loading">Calculando… (puede tardar ~1-2 min)</span>
+                        <div className="prediction-spinner">
+                          <div className="spinner-wheel" aria-label="Calculando predicción">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                              <span key={i} className="spinner-dot" style={{ '--i': i }}></span>
+                            ))}
+                          </div>
+                          <span className="prediction-loading">Calculando predicción…</span>
+                        </div>
                       ) : hasError ? (
                         <span className="prediction-error">Error: {hasError}</span>
                       ) : pred ? (
@@ -687,7 +720,7 @@ function App() {
         </MapContainer>
       </main>
       <footer className="dashboard-footer">
-        Datos en vivo de la API de estaciones · Barcelona · Tema Bicing
+        Datos de la API de estaciones de bicicletas públicas de Barcelona · Tema Bicing
       </footer>
     </div>
   );

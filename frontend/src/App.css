@@ -235,6 +235,60 @@
   word-break: break-word;
 }
 
+/* Spinner "rueda de luces" para la espera de la predicción LSTM. */
+.prediction-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.spinner-wheel {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  animation: spinner-rotate 1.2s linear infinite;
+}
+
+.spinner-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #c2005f;
+  opacity: 0.25;
+  transform: rotate(calc(var(--i) * 45deg)) translateY(-14px);
+  animation: spinner-light 1.2s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.15s);
+  box-shadow: 0 0 4px rgba(194, 0, 95, 0.35);
+}
+
+@keyframes spinner-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-light {
+  0%, 100% {
+    opacity: 0.25;
+    transform: rotate(calc(var(--i) * 45deg)) translateY(-14px) scale(1);
+  }
+  50% {
+    opacity: 1;
+    background: #e6007e;
+    box-shadow: 0 0 8px rgba(230, 0, 126, 0.75);
+    transform: rotate(calc(var(--i) * 45deg)) translateY(-14px) scale(1.25);
+  }
+}
+
 .dashboard-footer {
   flex: 0 0 auto;
   background: #1b5e20;

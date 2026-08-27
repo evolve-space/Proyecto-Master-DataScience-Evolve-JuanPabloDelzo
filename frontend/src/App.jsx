@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import { divIcon } from 'leaflet';
+import { Bike, Lock, Zap } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -17,7 +18,7 @@ const PREDICCION_API = 'http://127.0.0.1:5000/api/predict';
 // Nota: por cómo está desplegado el servicio, el segmento de la URL sigue
 // llamándose "driving", pero el perfil realmente usado es el peatonal.
 const FOOT_NEAREST_URL = 'https://routing.openstreetmap.de/routed-foot/nearest/v1/driving';
-const FOOT_ROUTE_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
+const FOOT_TABLE_URL = 'https://routing.openstreetmap.de/routed-foot/table/v1/driving';
 
 // Nominatim: se usa una única vez para obtener el polígono administrativo
 // real del municipio de Barcelona, de forma que la ubicación aleatoria del
@@ -31,7 +32,7 @@ const BARCELONA_BOUNDARY_URL =
 // se consulta la distancia real caminando. Solo necesitamos 3 finales, así
 // que 5 candidatos dan margen de sobra sin lanzar demasiadas peticiones en
 // paralelo. Se reducen para acelerar la carga inicial.
-const WALKING_CANDIDATE_COUNT = 3;
+const WALKING_CANDIDATE_COUNT = 5;
 
 // Radio medio de la Tierra en kilómetros, usado en la fórmula de Haversine.
 const EARTH_RADIUS_KM = 6371;
@@ -106,7 +107,7 @@ const toRad = (deg) => (deg * Math.PI) / 180;
 // Se usa solo como preselección rápida (sin llamadas de red) para acotar
 // las estaciones candidatas antes de pedir la distancia real caminando;
 // la distancia final que se muestra y con la que se decide cuáles son las
-// "3 más cercanas" es la distancia peatonal real (ver fetchWalkingDistanceKm).
+// "3 más cercanas" es la distancia peatonal real (ver fetchWalkingDistancesTable).
 const haversineDistanceKm = (lat1, lon1, lat2, lon2) => {
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -259,26 +260,33 @@ const generateUserLocationOnStreet = async (attempts = 6) => {
   return randomFallbackPoint();
 };
 
-// Distancia real caminando (en km) entre dos puntos, calculada con el
-// servicio de rutas peatonales de OSRM. Devuelve `null` si el servicio no
-// responde, para que quien llame pueda recurrir a un valor aproximado.
-const fetchWalkingDistanceKm = async (from, to, retries = 2) => {
+// Distancias reales caminando (en metros) desde un punto a varias estaciones
+// usando el servicio /table de OSRM en una sola petición. Devuelve `null`
+// si el servicio no responde, para que quien llame pueda recurrir a la
+// distancia en línea recta.
+const fetchWalkingDistancesTable = async (from, stations, retries = 2) => {
+  if (stations.length === 0) return null;
+  const coordinates = [from, ...stations].map((p) => `${p.lon},${p.lat}`).join(';');
+  const destinations = stations.map((_, i) => i + 1).join(';');
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     let timeout;
     try {
       const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${FOOT_ROUTE_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`, {
-        signal: controller.signal,
-      });
+      timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(
+        `${FOOT_TABLE_URL}/${coordinates}?annotations=distance&sources=0&destinations=${destinations}`,
+        { signal: controller.signal },
+      );
       if (res.status === 429 && attempt < retries) {
-        await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
         continue;
       }
       if (!res.ok) return null;
       const data = await res.json();
-      const meters = data?.routes?.[0]?.distance;
-      return typeof meters === 'number' ? meters / 1000 : null;
+      if (data.code !== 'Ok') return null;
+      const row = data?.distances?.[0];
+      if (!Array.isArray(row) || row.length !== stations.length) return null;
+      return row;
     } catch {
       if (attempt < retries) continue;
       return null;
@@ -456,19 +464,16 @@ function App() {
         .sort((a, b) => a.straightLineKm - b.straightLineKm)
         .slice(0, WALKING_CANDIDATE_COUNT);
 
-      const withWalkingDistance = [];
-      for (let i = 0; i < candidates.length; i += 1) {
-        const s = candidates[i];
-        const walkingKm = await fetchWalkingDistanceKm(userLocation, { lat: s.lat, lon: s.lon });
-        withWalkingDistance.push({
+      const walkingMeters = await fetchWalkingDistancesTable(userLocation, candidates);
+
+      const withWalkingDistance = candidates.map((s, i) => {
+        const meters = walkingMeters?.[i];
+        return {
           ...s,
-          distanceKm: walkingKm ?? s.straightLineKm,
-          isWalkingDistance: walkingKm != null,
-        });
-        if (i < candidates.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 150));
-        }
-      }
+          distanceKm: meters != null ? meters / 1000 : s.straightLineKm,
+          isWalkingDistance: meters != null,
+        };
+      });
 
       withWalkingDistance.sort((a, b) => a.distanceKm - b.distanceKm);
 
@@ -680,17 +685,23 @@ function App() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td>Mecánicas</td>
+                              <td>
+                                <Bike size={14} /> Mecánicas
+                              </td>
                               <td>{nbm5}</td>
                               <td>{nbm10}</td>
                             </tr>
                             <tr>
-                              <td>Eléctricas</td>
+                              <td>
+                                <Zap size={14} /> Eléctricas
+                              </td>
                               <td>{nbe5}</td>
                               <td>{nbe10}</td>
                             </tr>
                             <tr>
-                              <td>Docks</td>
+                              <td>
+                                <Lock size={14} /> Docks
+                              </td>
                               <td>{docks5}</td>
                               <td>{docks10}</td>
                             </tr>

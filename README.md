@@ -155,7 +155,8 @@ Station information  +  Station status  +  Weather
 │       ├── 📄 01_idea_producto.md     ← Product description
 │       ├── 📄 02_datos_necesarios.md  ← Data description
 │       ├── 📄 03_modelo_datos.md      ← Data model and Gold layer
-│       └── 📄 04_analisis_modelado.md
+│       ├── 📄 04_analisis_modelado.md
+│       └── 📄 05_diseño_frontal.md    ← Frontend design
 │
 ├── 📂 frontend/                       ← User interface in React + Vite
 │   ├── 📄 package.json
@@ -183,8 +184,24 @@ Station information  +  Station status  +  Weather
         └── bikes.py
 ```
 
-> **Frontend**: created with `pnpm create vite@latest frontend -- --template react`.  
-> To run it: `cd frontend && pnpm install && pnpm dev`.
+## ▶️ How to run
+
+1. **Backend** (from the project root):
+   ```bash
+   python backend/api/informacion_api.py
+   ```
+   Exposes:
+   - `GET http://127.0.0.1:5000/api/informacion`
+   - `POST http://127.0.0.1:5000/api/predict`
+
+2. **Frontend**:
+   ```bash
+   cd frontend
+   pnpm install
+   pnpm dev
+   ```
+
+> **Note**: `backend/api/informacion_api.py` already includes both endpoints; `backend/api/bicis_pred_api.py` is a standalone alternative.
 
 ---
 

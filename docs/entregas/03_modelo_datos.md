@@ -193,7 +193,7 @@ La capa Gold **no persiste resultados en la base de datos**. Se compone de dos s
 - `backend/scripts/gold/bikes.py`: construye el dataset de features por estación (SQL + Python) y lo une con el clima.
 - `backend/scripts/main.py`: entrena el modelo LSTM y genera la predicción multi-horizonte (implementación actual, no una propuesta).
 
-Ambos se ejecutan a demanda; no existen tablas `gold.*` en MySQL. El frontend React ya está creado en la carpeta `frontend/`; exponer las predicciones vía API REST para que lo consuma queda como siguiente paso (ver sección 5.4).
+Ambos se ejecutan a demanda; no existen tablas `gold.*` en MySQL. El frontend React en `frontend/` consume tanto la información de estaciones como las predicciones a través de la API REST implementada en `backend/api/informacion_api.py` (ver sección 5.4).
 
 ### 5.1 `backend/scripts/gold/bikes.py` — construcción de features
 
@@ -236,35 +236,45 @@ modelo.entrenar_y_predecir()
 - **Entrenamiento**: split cronológico en **tres tramos disjuntos** train/val/test (80/10/10 por defecto, `val_frac`/`test_frac`), con `EarlyStopping` sobre `val_loss` monitorizado únicamente en el tramo de validación; el tramo de test nunca participa en el entrenamiento ni en la selección de pesos. *(Actualizado en `04_analisis_modelado.md`, sección 5: la versión inicial reutilizaba el tramo de test como `validation_data`, lo que introducía fuga de información en la métrica final; ver detalle y justificación de la corrección en esa entrega.)*
 - **Post-procesado**: las predicciones se recortan a `>= 0` (`np.maximum(fila, 0)`), ya que `nbm`/`nbe` no pueden ser negativos.
 
-### 5.3 API de predicciones (contrato propuesto — pendiente de implementar)
+### 5.3 API implementada
 
-#### `GET /api/predictions/{station_id}?horizon=10`
+La API REST ya está implementada en `backend/api/informacion_api.py` (Flask, puerto 5000) y expone los endpoints consumidos por el frontend:
 
-Devolvería la predicción para una estación concreta en el horizonte solicitado (minutos), envolviendo `LSTMbicis.entrenar_y_predecir()`.
+#### `GET /api/informacion`
 
-**Respuesta 200 (formato alineado con las salidas actuales de `main.py`):**
+Devuelve el listado de estaciones con `station_id`, `latitud`, `longitud`, `address`, `post_code` y `capacity`.
+
+```json
+{
+  "1": { "latitud": 41.387015, "longitud": 2.170047, "address": "Plaça de Catalunya", "post_code": "08002", "capacity": 20 },
+  "...": { ... }
+}
+```
+
+#### `POST /api/predict`
+
+Devuelve la predicción para una estación concreta a 5 y 10 minutos, envolviendo `LSTMbicis.entrenar_y_predecir()`.
+
+**Cuerpo de la petición:**
+
+```json
+{ "station_id": 30 }
+```
+
+**Respuesta 200:**
 
 ```json
 {
   "station_id": 30,
   "last_timestamp": "2025-09-30 21:51:23",
-  "forecast": [
-    { "horizon_minutes": 5,  "nbm": 11.24, "nbe": 0.44 },
-    { "horizon_minutes": 10, "nbm": 11.27, "nbe": 0.61 }
-  ],
-  "model_version": "lstm-v1"
+  "predictions": [
+    { "horizon_minutes": 5,  "timestamp": "...", "nbm": 11.24, "nbe": 0.44 },
+    { "horizon_minutes": 10, "timestamp": "...", "nbm": 11.27, "nbe": 0.61 }
+  ]
 }
 ```
 
-#### `GET /api/predictions/nearby?lat=41.3851&lon=2.1734&radius=500&horizon=60`
-
-Devuelve predicciones para todas las estaciones dentro de un radio (metros).
-
-#### `POST /api/predictions/refresh` *(admin/training)*
-
-Fuerza la recarga del modelo o un nuevo entrenamiento. No se recomienda exponer sin autenticación.
-
-### 5.4 Flujo de la capa Gold (actual + futuro)
+### 5.4 Flujo de la capa Gold
 
 ```
 Silver (MySQL: estado + informacion) ──┐
@@ -279,23 +289,25 @@ Silver (MySQL: estado + informacion) ──┐
                     Predicción nbm / nbe a 5 y 10 min vista
                                         │
                                         ▼
-              API REST (pendiente) ──► Frontend React
+              API REST (backend/api/informacion_api.py) ──► Frontend React
 ```
 
 ### 5.5 Relación capa Gold con el resto
 
 - `gold/bikes.py` consume `estado` e `informacion` (FK) de la capa Silver, y el clima de Open-Meteo.
 - `main.py` consume el `DataFrame` de `bikes.py` y entrena/predice sin persistir nada en MySQL.
-- Exponer las predicciones vía API para que el frontend React las consuma es el siguiente paso pendiente.
+- Las predicciones se exponen vía la API REST de `backend/api/informacion_api.py` y ya son consumidas por el frontend React.
 
-### 5.6 Ejemplo de consumo desde React (futuro)
+### 5.6 Ejemplo de consumo desde React (actual)
 
 ```javascript
-// Llamada a la API con fetch
-async function getPrediction(stationId, horizon = 60) {
-  const response = await fetch(
-    `${import.meta.env.VITE_API_URL}/predictions/${stationId}?horizon=${horizon}`
-  );
+// Llamada POST a /api/predict
+async function getPrediction(stationId) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/api/predict`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ station_id: stationId }),
+  });
   if (!response.ok) throw new Error('Error al obtener la predicción');
   return response.json();
 }

@@ -27,8 +27,6 @@ La siguiente imagen ilustra el resultado visual actual del frontend:
 
 ![Mockup frontal](../assets/05_mockup_frontal.png)
 
-Ruta del recurso: [`docs/assets/05_mockup_frontal.png`](../assets/05_mockup_frontal.png)
-
 ## 4. Pasos implementados
 
 ### 4.1 Carga de estaciones

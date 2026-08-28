@@ -579,10 +579,10 @@ function App() {
           ]}
           maxBoundsViscosity={1.0}
           scrollWheelZoom
+          attributionControl={false}
           className="map"
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
           />
@@ -670,7 +670,7 @@ function App() {
                               <span key={i} className="spinner-dot" style={{ '--i': i }}></span>
                             ))}
                           </div>
-                          <span className="prediction-loading">Calculando predicción…</span>
+                          <span className="prediction-loading">Tarda unos minutos…</span>
                         </div>
                       ) : hasError ? (
                         <span className="prediction-error">Error: {hasError}</span>
